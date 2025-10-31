@@ -51,6 +51,7 @@ export class Logger {
   private config: LoggerConfig;
   private storage: FileStorage;
   private context: Record<string, unknown> = {};
+  private pendingWrites: Promise<void>[] = [];
 
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = {
@@ -181,9 +182,27 @@ export class Logger {
 
     // File logging
     if (this.config.enableFile) {
-      this.logToFile(entry).catch((err) => {
+      const writePromise = this.logToFile(entry).catch((err) => {
         console.error("Failed to write log to file:", err);
       });
+      this.pendingWrites.push(writePromise);
+
+      // Clean up resolved promises to prevent memory leak
+      writePromise.finally(() => {
+        const index = this.pendingWrites.indexOf(writePromise);
+        if (index > -1) {
+          this.pendingWrites.splice(index, 1);
+        }
+      });
+    }
+  }
+
+  /**
+   * Wait for all pending log writes to complete
+   */
+  private async flushPendingWrites(): Promise<void> {
+    if (this.pendingWrites.length > 0) {
+      await Promise.all(this.pendingWrites);
     }
   }
 
@@ -326,6 +345,9 @@ export class Logger {
     search?: string;
     limit?: number;
   }): Promise<LogEntry[]> {
+    // Wait for pending writes to complete
+    await this.flushPendingWrites();
+
     const results: LogEntry[] = [];
     const startDate =
       filters.startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -379,17 +401,59 @@ export class Logger {
    * Parse human-readable log line back to LogEntry
    */
   private parseLogLine(line: string): LogEntry {
-    // Simple parser for formatted logs
-    // Format: "timestamp LEVEL [taskId] [cycleId] message | Context: {...}"
+    // Format: "timestamp LEVEL [taskId] [cycleId] message | Error: ... | Context: {...}"
     const parts = line.split(" | ");
     const main = parts[0];
     const tokens = main.split(" ");
 
-    return {
+    const entry: LogEntry = {
       timestamp: tokens[0],
       level: tokens[1].toLowerCase() as LogLevel,
-      message: tokens.slice(2).join(" "),
+      message: "",
     };
+
+    // Extract taskId and cycleId from brackets
+    let messageStartIndex = 2;
+    for (let i = 2; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token.startsWith("[") && token.endsWith("]")) {
+        const id = token.slice(1, -1);
+        if (!entry.taskId) {
+          entry.taskId = id;
+        } else if (!entry.cycleId) {
+          entry.cycleId = id;
+        }
+        messageStartIndex = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    // Join remaining tokens as message
+    entry.message = tokens.slice(messageStartIndex).join(" ");
+
+    // Parse error if present
+    if (parts[1] && parts[1].startsWith("Error: ")) {
+      const errorPart = parts[1].substring(7); // Remove "Error: "
+      const [name, ...messageParts] = errorPart.split(": ");
+      entry.error = {
+        name,
+        message: messageParts.join(": "),
+      };
+    }
+
+    // Parse context if present
+    const contextIndex = parts[1]?.startsWith("Context: ") ? 1 : 2;
+    if (parts[contextIndex] && parts[contextIndex].startsWith("Context: ")) {
+      try {
+        const contextJson = parts[contextIndex].substring(9); // Remove "Context: "
+        entry.context = JSON.parse(contextJson);
+      } catch {
+        // Ignore malformed context
+      }
+    }
+
+    return entry;
   }
 
   /**
@@ -399,6 +463,9 @@ export class Logger {
     total: number;
     byLevel: Record<LogLevel, number>;
   }> {
+    // Wait for pending writes to complete
+    await this.flushPendingWrites();
+
     const dateStr = date.toISOString().split("T")[0];
     const logFile = path.join(
       this.config.basePath,

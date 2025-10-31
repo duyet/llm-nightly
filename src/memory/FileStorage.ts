@@ -44,11 +44,15 @@ export class FileStorage {
   async append(path: string, content: string): Promise<void> {
     // Ensure directory exists
     const dir = path.substring(0, path.lastIndexOf("/"));
-    await Bun.write(`${dir}/.placeholder`, "");
+    const fs = await import("node:fs/promises");
+    try {
+      await fs.mkdir(dir, { recursive: true });
+    } catch {
+      // Directory might already exist
+    }
 
-    const file = Bun.file(path);
-    const existing = (await file.exists()) ? await file.text() : "";
-    await Bun.write(path, existing + content);
+    // Use Node.js appendFile which is atomic and handles concurrency
+    await fs.appendFile(path, content, "utf-8");
   }
 
   async delete(path: string): Promise<void> {
