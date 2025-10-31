@@ -1,0 +1,37 @@
+{
+  "name": "llm-nightly",
+  "version": "0.1.0",
+  "description": "Autonomous overnight AI agent system wrapping Claude Code CLI",
+  "module": "src/index.tsx",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.tsx",
+    "start": "bun run src/index.tsx",
+    "build": "bun build src/index.tsx --outdir dist --target bun",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "setup": "bun run src/scripts/setup.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.2.45",
+    "bun-types": "^1.3.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.0.2",
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "date-fns": "^2.30.0",
+    "ink": "^4.4.1",
+    "ink-text-input": "^5.0.1",
+    "react": "^18.2.0",
+    "simple-git": "^3.21.0",
+    "zod": "^3.22.4"
+  }
+}
