@@ -2,6 +2,7 @@
  * Task Validation - Comprehensive Zod schemas for runtime validation
  */
 import { z } from "zod";
+import type { ExtendedTaskConfig } from "@/types";
 
 /**
  * Priority schema (1-5, lower is higher priority)
@@ -286,4 +287,150 @@ export class TaskValidator {
 
     return { canRetry: true };
   }
+
+  /**
+   * Validate extended task configuration
+   */
+  static validateExtendedConfig(config: unknown): {
+    success: boolean;
+    data?: ExtendedTaskConfig;
+    errors?: string[];
+  } {
+    try {
+      const data = ExtendedTaskConfigSchema.parse(config);
+      return { success: true, data };
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return {
+          success: false,
+          errors: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`),
+        };
+      }
+      return {
+        success: false,
+        errors: ["Unknown validation error"],
+      };
+    }
+  }
+
+  /**
+   * Validate schedule configuration
+   */
+  static validateSchedule(schedule: unknown): {
+    valid: boolean;
+    errors?: string[];
+  } {
+    try {
+      ExtendedSchedulingSchema.parse(schedule);
+      return { valid: true };
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return {
+          valid: false,
+          errors: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`),
+        };
+      }
+      return { valid: false, errors: ["Unknown validation error"] };
+    }
+  }
+
+  /**
+   * Validate retry configuration
+   */
+  static validateRetryConfig(config: unknown): {
+    valid: boolean;
+    errors?: string[];
+  } {
+    try {
+      RetryConfigSchema.parse(config);
+      return { valid: true };
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return {
+          valid: false,
+          errors: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`),
+        };
+      }
+      return { valid: false, errors: ["Unknown validation error"] };
+    }
+  }
 }
+
+/**
+ * Extended validation schemas for advanced features
+ */
+
+// Retry configuration schema
+export const RetryConfigSchema = z.object({
+  maxRetries: z.number().int().min(0).max(10),
+  backoffMultiplier: z.number().min(1).max(5),
+  initialDelaySeconds: z.number().positive().max(300),
+  maxDelaySeconds: z.number().positive().max(3600),
+});
+
+// Resource limits schema
+export const ResourcesSchema = z.object({
+  maxTokens: z.number().positive().max(200000).optional(),
+  maxDuration: z.number().positive().max(3600).optional(),
+  maxMemoryMB: z.number().positive().max(32000).optional(),
+  requiresGPU: z.boolean().optional(),
+});
+
+// Time window schema
+export const TimeWindowSchema = z.object({
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  timezone: z.string().optional(),
+});
+
+// Recurring schedule schema
+export const RecurringScheduleSchema = z.object({
+  frequency: z.enum(["daily", "weekly", "monthly"]),
+  interval: z.number().int().positive().max(100),
+  until: z.string().datetime().optional(),
+});
+
+// Extended scheduling schema
+export const ExtendedSchedulingSchema = z.object({
+  notBefore: z.string().datetime().optional(),
+  notAfter: z.string().datetime().optional(),
+  preferredTimeWindows: z.array(TimeWindowSchema).optional(),
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
+  recurring: RecurringScheduleSchema.optional(),
+});
+
+// Environment configuration schema
+export const EnvironmentSchema = z.object({
+  workingDirectory: z.string().optional(),
+  environmentVariables: z.record(z.string()).optional(),
+  requiredTools: z.array(z.string()).optional(),
+  dockerImage: z.string().optional(),
+});
+
+// Notification settings schema
+export const NotificationSchema = z.object({
+  onStart: z.boolean().optional(),
+  onComplete: z.boolean().optional(),
+  onError: z.boolean().optional(),
+  channels: z.array(z.enum(["terminal", "file", "webhook"])).optional(),
+  webhookUrl: z.string().url().optional(),
+});
+
+// Quality gates schema
+export const QualityGatesSchema = z.object({
+  requireTests: z.boolean().optional(),
+  minTestCoverage: z.number().min(0).max(100).optional(),
+  requireLinting: z.boolean().optional(),
+  requireTypeCheck: z.boolean().optional(),
+  customChecks: z.array(z.string()).optional(),
+});
+
+// Extended task configuration schema
+export const ExtendedTaskConfigSchema = TaskConfigSchema.extend({
+  retryConfig: RetryConfigSchema.optional(),
+  resources: ResourcesSchema.optional(),
+  scheduling: ExtendedSchedulingSchema.optional(),
+  environment: EnvironmentSchema.optional(),
+  notifications: NotificationSchema.optional(),
+  qualityGates: QualityGatesSchema.optional(),
+});
