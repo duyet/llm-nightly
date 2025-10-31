@@ -47,9 +47,9 @@ async function main() {
       "❌ System health critical - please fix issues before starting",
     );
     console.error("");
-    console.error("Issues:");
-    for (const issue of health.issues) {
-      console.error(`  - ${issue}`);
+    console.error("Failed Checks:");
+    for (const check of health.checks.filter((c) => c.status === "fail")) {
+      console.error(`  - ${check.name}: ${check.message}`);
     }
     console.error("");
     console.error("Recommendations:");

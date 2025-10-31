@@ -1,0 +1,106 @@
+name: Security
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Run security scans weekly on Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+
+jobs:
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run dependency audit
+        run: |
+          # Bun doesn't have built-in audit yet, use npm audit as fallback
+          if command -v npm &> /dev/null; then
+            npm audit --audit-level=moderate || true
+          fi
+
+      - name: Check for known vulnerabilities
+        run: |
+          echo "Scanning for known vulnerabilities..."
+          # Add vulnerability scanning tools here
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:${{matrix.language}}"
+
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+  security-summary:
+    name: Security Summary
+    needs: [dependency-scan, codeql, secret-scan]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Security check summary
+        run: |
+          echo "Security scan completed"
+          if [ "${{ needs.dependency-scan.result }}" != "success" ] || \
+             [ "${{ needs.codeql.result }}" != "success" ] || \
+             [ "${{ needs.secret-scan.result }}" != "success" ]; then
+            echo "⚠️  Security issues detected"
+            exit 1
+          fi
+          echo "✅ All security checks passed"

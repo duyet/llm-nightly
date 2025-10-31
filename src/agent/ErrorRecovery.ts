@@ -27,6 +27,30 @@ export class ErrorRecovery {
   ): RecoveryResult {
     const maxRetries = retryConfig?.maxRetries ?? 3;
 
+    // Handle special error types that have specific strategies regardless of recoverability
+    if (error.type === "dependency") {
+      return {
+        shouldRetry: false,
+        strategy: {
+          type: "skip",
+          reason:
+            "Dependency not satisfied - will retry when dependency completes",
+        },
+        backoffDelay: 0,
+      };
+    }
+
+    if (error.type === "validation") {
+      return {
+        shouldRetry: false,
+        strategy: {
+          type: "abort",
+          reason: "Validation error - task configuration invalid",
+        },
+        backoffDelay: 0,
+      };
+    }
+
     // Check if error is recoverable
     if (!error.recoverable) {
       return {

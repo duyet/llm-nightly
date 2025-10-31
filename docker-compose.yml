@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  llm-nightly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: llm-nightly
+    restart: unless-stopped
+
+    environment:
+      - NODE_ENV=production
+      - LLM_NIGHTLY_BASE_PATH=/data/.llm-nightly
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+    volumes:
+      # Persistent data
+      - llm-nightly-data:/data/.llm-nightly
+      # Tasks directory
+      - ./tasks:/data/.llm-nightly/tasks
+      # Working directory (optional, for development)
+      - ${WORKING_DIR:-./workspace}:/workspace
+      # Config (optional)
+      - ./config.json:/data/.llm-nightly/config.json:ro
+
+    ports:
+      # API server port (if enabled)
+      - "${API_PORT:-3000}:3000"
+
+    networks:
+      - llm-nightly-network
+
+    healthcheck:
+      test: ["CMD", "bun", "run", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Monitoring with Prometheus (future)
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: llm-nightly-prometheus
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+  #     - prometheus-data:/prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   networks:
+  #     - llm-nightly-network
+
+  # Optional: Grafana for visualization (future)
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: llm-nightly-grafana
+  #   restart: unless-stopped
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+  #   ports:
+  #     - "3001:3000"
+  #   networks:
+  #     - llm-nightly-network
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+
+volumes:
+  llm-nightly-data:
+    driver: local
+  # prometheus-data:
+  #   driver: local
+  # grafana-data:
+  #   driver: local
+
+networks:
+  llm-nightly-network:
+    driver: bridge

@@ -1,307 +1,446 @@
 # LLM Nightly
 
-> Autonomous overnight AI agent system that wraps Claude Code CLI for unattended task execution
+> Autonomous Overnight AI Agent System - Schedule Claude Code tasks and let them run autonomously while you sleep.
 
 [![Built with Bun](https://img.shields.io/badge/Built%20with-Bun-black?logo=bun)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🌙 Overview
+**LLM Nightly** is a powerful autonomous task scheduler that wraps the Claude Code CLI to execute complex AI-powered tasks overnight. It features dependency resolution, error recovery with exponential backoff, token budget management, self-task creation, and comprehensive monitoring.
 
-LLM Nightly is an autonomous AI agent system designed to execute development tasks overnight without human intervention. Built on Bun for maximum performance, it features intelligent task selection, self-planning capabilities, multi-level error recovery, and persistent memory across sessions.
+## ✨ Features
 
-### Key Features
+- 🤖 **Autonomous Execution** - Runs tasks automatically with intelligent scheduling
+- 📊 **Terminal GUI** - Beautiful Kanban board and status dashboard
+- 🔄 **Dependency Resolution** - Automatic topological sorting and cycle detection
+- ⚡ **Error Recovery** - Exponential backoff with configurable retry strategies
+- 💰 **Token Budget Management** - Track and manage Claude API token usage with rollover
+- 🧠 **Self-Task Creation** - Agent can create new tasks based on 8 intelligent rules
+- 📈 **Resource Monitoring** - CPU, memory, and disk monitoring with adaptive concurrency
+- 📝 **Comprehensive Reporting** - Detailed execution reports with trends and insights
+- 🏥 **Health Checks** - System health monitoring with automatic diagnostics
+- 🔐 **Safe Operations** - Atomic file operations with rollback protection
 
-- **🤖 Fully Autonomous**: Operates independently during configured night hours
-- **🧠 Intelligent Selection**: Dynamic task prioritization based on multiple factors
-- **🔄 Self-Healing**: Multi-level error recovery with sub-agent assistance
-- **💾 Persistent Memory**: Full context preservation across sessions
-- **📊 Rich Terminal UI**: Real-time monitoring with live logs, Kanban board, and metrics
-- **🔗 GitHub Integration**: Automated clone, PR, merge, CI monitoring, and deployment tracking
-- **📰 News Summarization**: Daily tech news with intelligent deduplication
-- **⚡ High Performance**: Built on Bun for ultra-fast execution
+## 🏗️ Architecture
 
-## 🚀 Quick Start
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      LLM Nightly                            │
+│                                                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Kanban    │  │   Status     │  │   Reports    │      │
+│  │   Board     │  │  Dashboard   │  │  Generator   │      │
+│  └─────────────┘  └──────────────┘  └──────────────┘      │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │         Autonomous Agent (Orchestrator)             │   │
+│  │  - Task scheduling & execution                      │   │
+│  │  - Error recovery with exponential backoff          │   │
+│  │  - Token budget allocation & tracking               │   │
+│  │  - Self-task creation (8 intelligent rules)         │   │
+│  │  - Resource monitoring & adaptive concurrency       │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │    Task     │  │  Dependency  │  │   Claude     │      │
+│  │   Manager   │  │   Resolver   │  │  Executor    │      │
+│  └─────────────┘  └──────────────┘  └──────────────┘      │
+│                                                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Memory    │  │    File      │  │   Health     │      │
+│  │   Manager   │  │   Storage    │  │    Check     │      │
+│  └─────────────┘  └──────────────┘  └──────────────┘      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+                  Claude Code CLI
+```
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) v1.0+
-- Claude API key
-- GitHub token (optional, for GitHub integrations)
+1. **Bun Runtime** - Modern JavaScript runtime with native TypeScript support
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   ```
+
+2. **Claude Code CLI** - Official Anthropic CLI tool
+   ```bash
+   # Install Claude Code CLI (refer to official Anthropic docs)
+   # Verify installation
+   claude --version
+   ```
 
 ### Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/your-username/llm-nightly.git
-cd llm-nightly
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd llm-nightly
+   ```
 
-# Install dependencies
-bun install
+2. Install dependencies:
+   ```bash
+   bun install
+   ```
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env and add your API keys
+3. Run tests to verify setup:
+   ```bash
+   bun test
+   ```
 
-# Initialize the system
-bun run setup
+### Quick Start
+
+1. **Create your first task** - Tasks are Markdown files in the `~/.llm-nightly/open/` directory:
+
+   ```bash
+   mkdir -p ~/.llm-nightly/open
+   cat > ~/.llm-nightly/open/example-task.md << 'EOF'
+   ---
+   id: example-task
+   title: Analyze Project Structure
+   priority: 1
+   estimatedTokens: 5000
+   ---
+
+   # Task: Analyze Project Structure
+
+   Analyze the current project structure and provide a comprehensive report covering:
+
+   1. Directory organization
+   2. File naming conventions
+   3. Code organization patterns
+   4. Recommendations for improvement
+
+   Generate a detailed markdown report with your findings.
+   EOF
+   ```
+
+2. **Start LLM Nightly**:
+   ```bash
+   bun run src/index.ts
+   ```
+
+3. **Monitor execution** - The terminal will display:
+   - System health check results
+   - Real-time status dashboard (updates every 30 seconds)
+   - Task execution progress
+   - Token budget usage
+   - Error recovery attempts
+
+4. **Graceful shutdown** - Press `Ctrl+C` to stop:
+   - Agent stops gracefully
+   - Final execution report is generated
+   - Report saved to `~/.llm-nightly/reports/`
+
+## 📋 Task Configuration
+
+Tasks are defined as Markdown files with YAML frontmatter:
+
+### Basic Task
+
+```markdown
+---
+id: unique-task-id
+title: Task Title
+priority: 1
+estimatedTokens: 10000
+---
+
+# Task: Your Task Title
+
+Detailed task description and instructions for Claude Code...
 ```
 
-### Configuration
+### Advanced Task with Dependencies
 
-Edit `config/system.json`:
+```markdown
+---
+id: dependent-task
+title: Task with Dependencies
+priority: 2
+estimatedTokens: 15000
+dependencies:
+  - prerequisite-task-1
+  - prerequisite-task-2
+retryConfig:
+  maxRetries: 5
+  initialDelaySeconds: 10
+  backoffMultiplier: 2.0
+  maxDelaySeconds: 300
+---
+
+# Task: Advanced Task
+
+This task will only execute after its dependencies complete successfully.
+```
+
+### Scheduled Task
+
+```markdown
+---
+id: scheduled-task
+title: Nightly Analysis
+priority: 1
+estimatedTokens: 20000
+schedule:
+  notBefore: "2025-01-01T22:00:00Z"
+  notAfter: "2025-01-02T06:00:00Z"
+  timeZone: "America/New_York"
+recurring:
+  type: daily
+  interval: 1
+  endDate: "2025-12-31T23:59:59Z"
+---
+
+# Task: Nightly Analysis
+
+This task runs every night between 10 PM and 6 AM EST.
+```
+
+### Configuration Options
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | ✅ | Unique task identifier (alphanumeric + hyphens) |
+| `title` | string | ✅ | Human-readable task title (10-200 chars) |
+| `priority` | number | ✅ | Priority 1-5 (1 = highest) |
+| `estimatedTokens` | number | ✅ | Estimated Claude API tokens (max 100000) |
+| `dependencies` | string[] | ❌ | Array of task IDs that must complete first |
+| `tags` | string[] | ❌ | Tags for organization |
+| `retryConfig` | object | ❌ | Retry strategy configuration |
+| `schedule` | object | ❌ | Time window for execution |
+| `recurring` | object | ❌ | Recurring task configuration |
+
+## ⚙️ Configuration
+
+LLM Nightly uses configuration stored in `~/.llm-nightly/config.json`:
 
 ```json
 {
-  "scheduler": {
-    "nightMode": {
-      "enabled": true,
-      "startTime": "22:00",
-      "endTime": "06:00",
-      "timezone": "America/Los_Angeles"
-    },
-    "tokenBudget": {
-      "dailyLimit": 100000,
-      "reservePercentage": 0.25
-    }
+  "basePath": "~/.llm-nightly",
+  "claudePath": "claude",
+  "workingDir": "/path/to/your/project",
+  "agent": {
+    "tokenBudget": 100000,
+    "maxConcurrentTasks": 3,
+    "pollingIntervalSeconds": 60,
+    "autonomyLevel": "semi",
+    "enableSelfTaskCreation": true,
+    "maxSelfCreatedTasksPerCycle": 3
+  },
+  "scheduling": {
+    "defaultTimeZone": "UTC",
+    "lookaheadHours": 24,
+    "rescheduleFailedTasksAfter": 6,
+    "maxScheduledTasks": 10
+  },
+  "resources": {
+    "cpu": { "warning": 75, "critical": 90 },
+    "memory": { "warning": 75, "critical": 90 },
+    "disk": { "warning": 80, "critical": 95 }
+  },
+  "tokenBudget": {
+    "rolloverEnabled": true,
+    "rolloverPercentage": 50,
+    "warningThreshold": 75,
+    "criticalThreshold": 90
   }
 }
 ```
 
-### Usage
+### Configuration Fields
+
+**Paths**
+- `basePath` - Storage location for tasks and data (default: `~/.llm-nightly`)
+- `claudePath` - Path to Claude Code CLI executable (default: `claude`)
+- `workingDir` - Working directory for task execution (default: current directory)
+
+**Agent**
+- `tokenBudget` - Daily token budget (default: 100000)
+- `maxConcurrentTasks` - Max parallel tasks (default: 3)
+- `pollingIntervalSeconds` - Execution cycle interval (default: 60)
+- `autonomyLevel` - `full`, `semi`, or `manual` (default: `semi`)
+- `enableSelfTaskCreation` - Allow agent to create tasks (default: true)
+- `maxSelfCreatedTasksPerCycle` - Max self-created tasks per cycle (default: 3)
+
+**Scheduling**
+- `defaultTimeZone` - Default timezone (default: UTC)
+- `lookaheadHours` - Schedule lookahead window (default: 24)
+- `rescheduleFailedTasksAfter` - Hours before rescheduling failed tasks (default: 6)
+- `maxScheduledTasks` - Max scheduled tasks to maintain (default: 10)
+
+**Resource Monitoring**
+- `cpu.warning` / `cpu.critical` - CPU usage thresholds (default: 75% / 90%)
+- `memory.warning` / `memory.critical` - Memory usage thresholds (default: 75% / 90%)
+- `disk.warning` / `disk.critical` - Disk usage thresholds (default: 80% / 95%)
+
+**Token Budget**
+- `rolloverEnabled` - Enable unused token rollover (default: true)
+- `rolloverPercentage` - Percentage of unused tokens to rollover (default: 50%)
+- `warningThreshold` - Warning threshold percentage (default: 75%)
+- `criticalThreshold` - Critical threshold percentage (default: 90%)
+
+## 🧠 Self-Task Creation
+
+When `enableSelfTaskCreation` is enabled, the agent can autonomously create tasks based on 8 intelligent rules:
+
+1. **Repeated Failures** - Creates debug tasks for tasks failing 2+ times
+2. **Cleanup After Completion** - Creates cleanup tasks after 5+ completions
+3. **Documentation Needed** - Creates documentation tasks after 3+ implementations
+4. **Performance Degradation** - Creates optimization tasks when cycle duration increases 50%
+5. **Token Budget Pressure** - Creates optimization tasks when token usage trending up
+6. **High Error Rate** - Creates analysis tasks when error rate >30%
+7. **Test Coverage Needed** - Creates test tasks for implementations without tests
+8. **Stale Dependencies** - Creates cleanup tasks for blocked dependency chains
+
+## 📁 Directory Structure
+
+```
+~/.llm-nightly/
+├── config.json          # Configuration file
+├── open/                # Tasks ready to execute
+├── in-progress/         # Currently executing tasks
+├── done/                # Completed tasks
+├── cancelled/           # Failed/cancelled tasks
+├── blocked/             # Tasks waiting on dependencies
+├── history/             # Execution history
+├── learnings/           # Success/failure learnings
+├── news/                # Latest news and updates
+├── metrics/             # Time-series metrics data
+└── reports/             # Execution reports
+```
+
+## 🔄 Error Recovery
+
+LLM Nightly implements sophisticated error recovery with exponential backoff:
+
+**Error Types and Strategies:**
+- `timeout` → Retry with increased timeout
+- `token_limit` → Retry with reduced scope
+- `dependency` → Skip until dependencies complete
+- `validation` → Abort (requires config fix)
+- `execution` → Retry after backoff
+- `unknown` → Attempt recovery with caution
+
+**Backoff Calculation:**
+```
+delay = initialDelay * (multiplier ^ attempt)
+capped at maxDelay
+```
+
+**Default Configuration:**
+- Initial delay: 5 seconds
+- Backoff multiplier: 1.5
+- Max delay: 300 seconds (5 minutes)
+- Max retries: 3
+
+**Jitter** - Adds ±20% random variation to prevent thundering herd
+
+## 🔨 CLI Commands
 
 ```bash
-# Start in night mode (runs during configured hours)
-bun run start --mode night
+# Start the autonomous agent
+bun run src/index.ts
 
-# Start in interactive mode (manual control)
-bun run start --mode interactive
+# Run tests
+bun test
 
-# Execute a specific task
-bun run task --id task-001
+# Run specific test file
+bun test tests/unit/agent/ErrorRecovery.test.ts
 
-# View dashboard
-bun run dashboard
+# Type checking
+bun run tsc --noEmit
 
-# List tasks
-bun run list --status open
+# Generate example config
+bun run -e 'import { ConfigManager } from "./src/config/Config"; console.log(ConfigManager.createExample())'
 ```
 
-## 📖 Documentation
+## 📊 Monitoring and Reports
 
-- [Architecture](docs/architecture.md) - System architecture and design
-- [API Reference](docs/api-reference.md) - Complete API documentation
-- [User Guide](docs/user-guide.md) - How to use LLM Nightly
-- [Development Guide](docs/development-guide.md) - Contributing and development
-- [Phase Documents](docs/phases/) - Implementation phases
+### Status Dashboard
 
-## 🎯 Core Concepts
+Real-time terminal dashboard shows:
+- Agent status (running/stopped/error)
+- Current cycle information
+- Task statistics (open/in-progress/done/failed/blocked)
+- Token budget status with usage percentage
+- Recent activity log
+- Resource utilization (CPU/memory/disk)
 
-### Tasks
+### Health Checks
 
-Tasks are the fundamental unit of work. Each task has:
+Automatic health checks monitor:
+- ✅ Claude Code CLI availability
+- ✅ Workspace write permissions
+- ✅ Task storage integrity
+- ✅ Disk space availability
+- ✅ Memory availability
+- ✅ Task queue health
+- ✅ File permissions
 
-- **Priority**: 1 (critical) to 5 (optional)
-- **Autonomy Level**: `full`, `semi`, or `manual`
-- **Dependencies**: Other tasks that must complete first
-- **Estimated Tokens**: Resource budget
-- **Configuration**: Timeout, retry strategy, etc.
+### Execution Reports
 
-### Task Lifecycle
+Detailed reports include:
+- **Summary** - Tasks, cycles, tokens, performance metrics
+- **Trends** - Success rate, token usage, performance trends
+- **Achievements** - Milestones and accomplishments
+- **Insights** - Warnings and recommendations
+- **Top Errors** - Most common errors with counts
+- **Recommendations** - Actionable improvement suggestions
 
-```
-Open → In Progress → Done
-         ↓
-      Blocked (on error)
-```
+Reports are saved in JSON and Markdown formats to `~/.llm-nightly/reports/`
 
-Tasks are stored as folders:
+## 🛠️ Development
 
-```
-tasks/
-├── open/
-│   └── task-001-improve-frontend/
-│       ├── prompt.md
-│       ├── config.json
-│       └── context.md
-├── in-progress/
-├── done/
-└── results/
-```
-
-### Scheduling
-
-The intelligent scheduler:
-
-1. Runs during configured night hours
-2. Selects tasks based on priority, urgency, success rate, token efficiency
-3. Allocates token budget dynamically with rollover
-4. Handles dependencies automatically
-5. Executes tasks concurrently when possible
-
-### Error Recovery
-
-Multi-level error recovery:
-
-1. **Level 1**: Spawn debugging sub-agent for analysis and fix
-2. **Level 2**: Auto-retry with exponential backoff (3 attempts)
-3. **Level 3**: Skip and log detailed error report
-
-### Memory System
-
-Persistent storage in markdown files:
+### Project Structure
 
 ```
-memory/
-├── execution-history/      # Daily execution logs
-├── news-cache/            # Deduplication hashes
-├── repo-states/           # Repository tracking
-└── learning/              # Performance metrics
+src/
+├── agent/              # Autonomous agent core
+│   ├── AutonomousAgent.ts
+│   ├── ClaudeExecutor.ts
+│   ├── ContextBuilder.ts
+│   ├── ErrorRecovery.ts
+│   ├── SelfTaskCreator.ts
+│   ├── StreamingParser.ts
+│   └── TokenBudget.ts
+├── config/             # Configuration management
+│   └── Config.ts
+├── memory/             # Memory and storage
+│   ├── FileStorage.ts
+│   └── MemoryManager.ts
+├── monitoring/         # Monitoring and health
+│   ├── HealthCheck.ts
+│   ├── MetricsCollector.ts
+│   ├── ResourceMonitor.ts
+│   └── StatusDashboard.ts
+├── reporting/          # Report generation
+│   └── ReportGenerator.ts
+├── scheduling/         # Task scheduling
+│   ├── Scheduler.ts
+│   └── ScheduleHelper.ts
+├── tasks/              # Task management
+│   ├── DependencyGraph.ts
+│   ├── DependencyResolver.ts
+│   ├── ExecutionOrder.ts
+│   ├── FolderOrganizer.ts
+│   ├── MetadataManager.ts
+│   ├── TaskLoader.ts
+│   ├── TaskManager.ts
+│   ├── TaskMigrator.ts
+│   ├── TaskQueue.ts
+│   └── validator.ts
+├── types/              # TypeScript type definitions
+│   └── task.ts
+├── ui/                 # Terminal UI components
+│   ├── Card.tsx
+│   ├── Column.tsx
+│   └── KanbanScreen.tsx
+└── index.ts            # Main entry point
 ```
-
-## 🖥️ Terminal UI
-
-### Dashboard View
-
-```
-┌──────────────────────────────────────────────────────┐
-│ LLM Nightly v1.0.0           Status: Running         │
-├──────────────────────────────────────────────────────┤
-│ Tasks: 3 open | 1 in progress | 5 done               │
-│ Tokens: 15,342 / 100,000 (15%)                       │
-│ Success Rate: 87.5%                                   │
-│ Uptime: 2h 34m                                        │
-├──────────────────────────────────────────────────────┤
-│ Current: task-003-optimize-database                   │
-│ Progress: ●●●●●●○○○○ 60%                            │
-│ Duration: 8m 23s                                      │
-└──────────────────────────────────────────────────────┘
-```
-
-### Kanban Board
-
-```
-┌─────────────┬─────────────┬─────────────┐
-│ Open (3)    │In Progress(1│ Done (5)    │
-├─────────────┼─────────────┼─────────────┤
-│ ┌─────────┐ │ ┌─────────┐ │ ┌─────────┐ │
-│ │#001 ⚡ 1 │ │ │#003 🔒 2 │ │ │#004 ✅ 3 │ │
-│ │Frontend  │ │ │DB Optim. │ │ │Deps Up   │ │
-│ │5K tokens │ │ │8K tokens │ │ │3K tokens │ │
-│ └─────────┘ │ │●●●○○○○○○○│ │ └─────────┘ │
-└─────────────┴─────────────┴─────────────┘
-
-[Tab] Switch view  [↑/↓] Navigate  [Enter] Details  [q] Quit
-```
-
-## 🔧 Creating Tasks
-
-### Via CLI
-
-```bash
-bun run create \
-  --title "Improve website performance" \
-  --priority 2 \
-  --autonomy full \
-  --tags "performance,frontend" \
-  --prompt-file task-prompt.md
-```
-
-### Via Task Folder
-
-Create a folder in `tasks/open/`:
-
-```
-tasks/open/task-042-new-feature/
-├── config.json
-├── prompt.md
-└── context.md (optional)
-```
-
-**config.json:**
-```json
-{
-  "id": "task-042-new-feature",
-  "title": "Implement new feature",
-  "priority": 2,
-  "autonomyLevel": "full",
-  "estimatedTokens": 5000,
-  "dependencies": [],
-  "tags": ["feature", "backend"],
-  "createdAt": "2025-10-31T22:00:00Z",
-  "createdBy": "human",
-  "maxRetries": 3,
-  "timeout": 30
-}
-```
-
-**prompt.md:**
-```markdown
-# Implement User Authentication
-
-Add JWT-based authentication to the API.
-
-## Requirements
-- JWT token generation and validation
-- Login and registration endpoints
-- Password hashing with bcrypt
-- Token refresh mechanism
-
-## Acceptance Criteria
-- All tests pass
-- API documented
-- Security best practices followed
-```
-
-## 🔗 Integrations
-
-### GitHub Workflow
-
-Example task for GitHub automation:
-
-```markdown
-# Improve duyet.net Frontend
-
-1. Clone repository: https://github.com/duyet/duyet.net
-2. Analyze performance bottlenecks
-3. Implement optimizations
-4. Create PR with improvements
-5. Wait for CI to pass
-6. Auto-merge if successful
-7. Monitor deployment
-```
-
-The system will:
-- ✅ Clone the repo
-- ✅ Make changes via Claude Code
-- ✅ Create a PR
-- ✅ Monitor CI/CD pipeline
-- ✅ Auto-merge on success
-- ✅ Track deployment status
-- ✅ Rollback on failure
-
-### News Summarization
-
-Automatic daily tech news summary:
-
-```markdown
-# Tech News - 2025-10-31
-
-## Highlights
-- **AI**: OpenAI releases GPT-5 (12 articles)
-- **Web**: New React version with server components (8 articles)
-- **Security**: Critical vulnerability in popular library (5 articles)
-
-## Detailed Summary
-[AI-generated comprehensive summary...]
-```
-
-Features:
-- Content deduplication (prevents showing same news twice)
-- Topic clustering
-- Source aggregation (HN, Reddit, etc.)
-
-## 🧪 Development
 
 ### Running Tests
 
@@ -312,104 +451,136 @@ bun test
 # Run with coverage
 bun test --coverage
 
-# Run specific test file
-bun test tests/unit/TaskManager.test.ts
-
 # Watch mode
 bun test --watch
+
+# Specific test file
+bun test tests/unit/agent/ErrorRecovery.test.ts
 ```
 
-### Development Mode
+### Test Coverage
 
+**Target**: 100% coverage for core functionality
+
+**Current**: 76 tests across 6 test files
+- ✅ Task validation and management
+- ✅ Task queue operations
+- ✅ Memory management
+- ✅ Error recovery strategies
+
+## 💡 Best Practices
+
+### Task Design
+
+1. **Atomic Tasks** - Each task should accomplish one specific goal
+2. **Clear Instructions** - Provide detailed, unambiguous instructions
+3. **Appropriate Tokens** - Estimate tokens conservatively
+4. **Priority Management** - Use priority 1-2 for critical tasks, 3-5 for others
+5. **Dependencies** - Only use dependencies when truly necessary
+6. **Error Handling** - Configure retry strategies for transient errors
+
+### Token Budget Management
+
+1. **Daily Planning** - Plan tasks to stay within daily budget
+2. **Rollover Strategy** - Enable rollover to accumulate unused tokens
+3. **Priority Allocation** - High priority tasks get token allocation first
+4. **Monitoring** - Watch token usage trends in reports
+5. **Optimization** - Break down large tasks if token usage is high
+
+### Scheduling
+
+1. **Time Windows** - Use `notBefore`/`notAfter` for overnight execution
+2. **Recurring Tasks** - Set up daily/weekly tasks for routine work
+3. **Timezone Awareness** - Always specify timezone for scheduled tasks
+4. **Lookahead** - Keep lookahead window reasonable (default: 24 hours)
+5. **Failed Task Handling** - Allow reschedule after reasonable delay
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**Claude Code CLI Not Found**
 ```bash
-# Start with hot reload
-bun run dev
+# Verify installation
+which claude
 
-# Watch for changes
-bun run dev --watch
+# Set custom path in config
+{
+  "claudePath": "/usr/local/bin/claude"
+}
 ```
 
-### Project Structure
-
-```
-llm-nightly/
-├── src/
-│   ├── ui/              # Terminal UI (Ink components)
-│   ├── scheduler/       # Task scheduling logic
-│   ├── agent/          # Claude Code wrapper
-│   ├── tasks/          # Task management
-│   ├── memory/         # Persistent storage
-│   ├── integrations/   # External services
-│   └── utils/          # Shared utilities
-├── tests/
-│   ├── unit/           # Unit tests
-│   ├── integration/    # Integration tests
-│   └── e2e/            # End-to-end tests
-├── docs/               # Documentation
-├── tasks/              # Task storage
-└── memory/             # Persistent memory
+**Permission Errors**
+```bash
+# Fix task directory permissions
+chmod -R 755 ~/.llm-nightly
 ```
 
-## 📊 Performance
+**Memory Issues**
+```bash
+# Reduce concurrent tasks
+{
+  "agent": {
+    "maxConcurrentTasks": 1
+  }
+}
+```
 
-- **Startup time**: < 1 second
-- **Task selection**: < 100ms
-- **UI rendering**: 60fps
-- **Memory usage**: < 500MB
-- **Test coverage**: 100%
+**High Token Usage**
+```bash
+# Enable stricter budget management
+{
+  "tokenBudget": {
+    "rolloverEnabled": false,
+    "warningThreshold": 50,
+    "criticalThreshold": 75
+  }
+}
+```
 
-## 🛡️ Security
+### Debug Mode
 
-- API keys stored securely (environment variables)
-- No secrets in logs or commits
-- Input validation on all user input
-- File system access restricted to workspace
-- Dependencies scanned for vulnerabilities
-
-## 🗺️ Roadmap
-
-### Phase 1-6 (Current)
-- ✅ Foundation and basic functionality
-- ✅ Task management with Kanban UI
-- ✅ Autonomous agent with error recovery
-- ✅ Intelligent scheduling
-- ✅ GitHub and news integrations
-- ✅ Testing and polish
-
-### Phase 7+ (Future)
-- [ ] Multi-agent collaboration
-- [ ] Machine learning for task prediction
-- [ ] Web dashboard
-- [ ] API server for remote control
-- [ ] Cloud sync across machines
-- [ ] Plugin system
-- [ ] Voice/chat interface
+Enable verbose logging:
+```bash
+LOG_LEVEL=debug bun run src/index.ts
+```
 
 ## 🤝 Contributing
 
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes with tests
-4. Submit a pull request
+3. Write tests for new functionality
+4. Ensure all tests pass: `bun test`
+5. Submit a pull request
 
 ## 📝 License
 
-MIT © [Your Name]
+MIT License - see LICENSE file for details
 
 ## 🙏 Acknowledgments
 
-- Built with [Bun](https://bun.sh)
-- Terminal UI powered by [Ink](https://github.com/vadimdemedes/ink)
-- Claude Code by [Anthropic](https://anthropic.com)
-- Inspired by autonomous agent research
+- Built with [Bun](https://bun.sh) - Fast JavaScript runtime
+- Powered by [Claude Code](https://www.anthropic.com) - AI pair programmer
+- Terminal UI with [Ink](https://github.com/vadimdemedes/ink) - React for CLIs
+- Validation with [Zod](https://zod.dev) - TypeScript-first schema validation
 
-## 📧 Contact
+## 📧 Support
 
-- Issues: [GitHub Issues](https://github.com/your-username/llm-nightly/issues)
-- Discussions: [GitHub Discussions](https://github.com/your-username/llm-nightly/discussions)
+For issues, questions, or feature requests, please open an issue on GitHub.
+
+## 🗺️ Roadmap
+
+- [ ] Web UI dashboard
+- [ ] Multi-project support
+- [ ] Task templates library
+- [ ] Integration with GitHub Actions
+- [ ] Slack/Discord notifications
+- [ ] Advanced analytics and insights
+- [ ] Task dependency visualization
+- [ ] Remote task submission API
 
 ---
 
-Made with ❤️ and ☕ during the night
+**Made with ❤️ by the LLM Nightly team**
