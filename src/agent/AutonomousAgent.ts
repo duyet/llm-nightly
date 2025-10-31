@@ -4,12 +4,15 @@
 import { ClaudeExecutor } from "./ClaudeExecutor";
 import { ErrorRecovery } from "./ErrorRecovery";
 import { TokenBudget } from "./TokenBudget";
+import { SelfTaskCreator } from "./SelfTaskCreator";
 import { TaskLoader } from "@/tasks/TaskLoader";
 import { DependencyResolver } from "@/tasks/DependencyResolver";
 import { ExecutionOrder } from "@/tasks/ExecutionOrder";
 import { TaskMigrator } from "@/tasks/TaskMigrator";
 import { MetadataManager } from "@/tasks/MetadataManager";
 import { ScheduleHelper } from "@/utils/ScheduleHelper";
+import { StatusDashboard } from "@/monitoring/StatusDashboard";
+import { MetricsCollector } from "@/monitoring/MetricsCollector";
 import type {
   Task,
   ExecutionResult,
@@ -68,6 +71,9 @@ export class AutonomousAgent {
   private config: AgentConfig;
   private executor: ClaudeExecutor;
   private tokenBudget: TokenBudget;
+  private selfTaskCreator: SelfTaskCreator;
+  private statusDashboard: StatusDashboard;
+  private metricsCollector: MetricsCollector;
   private loader: TaskLoader;
   private dependencyResolver: DependencyResolver;
   private executionOrder: ExecutionOrder;
@@ -108,6 +114,11 @@ export class AutonomousAgent {
     this.executionOrder = new ExecutionOrder(config.basePath);
     this.migrator = new TaskMigrator(config.basePath);
     this.metadataManager = new MetadataManager(config.basePath);
+
+    // Initialize monitoring and self-task creation
+    this.selfTaskCreator = new SelfTaskCreator(config.basePath);
+    this.statusDashboard = new StatusDashboard(this);
+    this.metricsCollector = new MetricsCollector(config.basePath);
   }
 
   /**
@@ -520,15 +531,66 @@ export class AutonomousAgent {
    * Create self-tasks based on system analysis
    */
   private async createSelfTasks(): Promise<void> {
-    // TODO: Implement intelligent self-task creation
-    // This would analyze:
-    // - Failed tasks and create debugging tasks
-    // - Completed tasks and create follow-up tasks
-    // - System metrics and create optimization tasks
-    // - Budget usage and create budget management tasks
+    try {
+      // Gather context for self-task creation
+      const healthStatus = this.statusDashboard.getHealthStatus();
+      const trends = this.statusDashboard.getTrends();
 
-    // For now, placeholder
-    console.log("   🤖 Self-task creation not yet implemented");
+      // Load failed and completed tasks
+      const failedTasks = await this.loader.loadTasksByStatus("cancelled", {
+        validateOnLoad: false,
+      });
+      const completedTasks = await this.loader.loadTasksByStatus("done", {
+        validateOnLoad: false,
+      });
+
+      // Calculate error rate
+      const totalTasks = this.totalTasksExecuted;
+      const failedCount = this.cycleHistory.reduce(
+        (sum, c) => sum + c.tasksFailed,
+        0,
+      );
+      const errorRate = totalTasks > 0 ? (failedCount / totalTasks) * 100 : 0;
+
+      // Calculate success rate
+      const successCount = this.cycleHistory.reduce(
+        (sum, c) => sum + c.tasksSucceeded,
+        0,
+      );
+      const successRate =
+        totalTasks > 0 ? (successCount / totalTasks) * 100 : 0;
+
+      // Create context
+      const context = {
+        recentCycles: this.cycleHistory.slice(-10),
+        failedTasks: failedTasks.slice(-20),
+        completedTasks: completedTasks.slice(-20),
+        healthStatus,
+        tokenUsageTrend: trends.tokenUsageTrend,
+        errorRate,
+        successRate,
+      };
+
+      // Create self-tasks
+      const result = await this.selfTaskCreator.createSelfTasks(
+        context,
+        this.config.maxSelfCreatedTasksPerCycle,
+      );
+
+      // Log results
+      if (result.tasksCreated.length > 0) {
+        console.log(
+          `   🤖 Self-created ${result.tasksCreated.length} tasks: ${result.rulesTriggered.join(", ")}`,
+        );
+
+        // Update cycle stats
+        if (this.currentCycle) {
+          this.currentCycle.tasksCreated += result.tasksCreated.length;
+        }
+      }
+    } catch (error) {
+      console.error("Failed to create self-tasks:", error);
+    }
   }
 
   /**
