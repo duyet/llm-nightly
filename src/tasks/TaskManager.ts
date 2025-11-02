@@ -3,6 +3,9 @@
  */
 import type { Task, TaskConfig, TaskStatus } from "@/types";
 import { z } from "zod";
+import { logger } from "@/logging/Logger";
+import { rename, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 
 const TaskConfigSchema = z.object({
   id: z.string().regex(/^task-\d+-/),
@@ -106,23 +109,62 @@ export class TaskManager {
 
   async moveTask(taskId: string, newStatus: TaskStatus): Promise<void> {
     const task = await this.getTask(taskId);
-    if (!task) throw new Error(`Task ${taskId} not found`);
+    if (!task) {
+      const error = new Error(`Task ${taskId} not found`);
+      logger.error("Task not found for move operation", error, {
+        taskId,
+        newStatus,
+      });
+      throw error;
+    }
 
-    const oldDir = `${this.basePath}/tasks/${task.status}/${taskId}`;
-    const newDir = `${this.basePath}/tasks/${newStatus}/${taskId}`;
+    const oldDir = join(this.basePath, "tasks", task.status, taskId);
+    const newStatusDir = join(this.basePath, "tasks", newStatus);
+    const newDir = join(newStatusDir, taskId);
 
-    // TODO: Use atomic move operation
-    // For now, simple implementation
-    await Bun.$`mkdir -p ${newDir}`;
-    await Bun.$`cp -r ${oldDir}/* ${newDir}/`;
-    await Bun.$`rm -rf ${oldDir}`;
+    try {
+      // Ensure target status directory exists
+      await mkdir(newStatusDir, { recursive: true });
+
+      // Use atomic rename operation (same filesystem)
+      await rename(oldDir, newDir);
+
+      logger.info("Task moved successfully", {
+        taskId,
+        from: task.status,
+        to: newStatus,
+      });
+    } catch (error) {
+      logger.error(
+        "Failed to move task",
+        error instanceof Error ? error : new Error(String(error)),
+        { taskId, from: task.status, to: newStatus },
+      );
+      throw error;
+    }
   }
 
   async deleteTask(taskId: string): Promise<void> {
     const task = await this.getTask(taskId);
-    if (!task) throw new Error(`Task ${taskId} not found`);
+    if (!task) {
+      const error = new Error(`Task ${taskId} not found`);
+      logger.error("Task not found for delete operation", error, { taskId });
+      throw error;
+    }
 
-    const taskDir = `${this.basePath}/tasks/${task.status}/${taskId}`;
-    await Bun.$`rm -rf ${taskDir}`;
+    const taskDir = join(this.basePath, "tasks", task.status, taskId);
+
+    try {
+      // Use rm with recursive option
+      await Bun.$`rm -rf ${taskDir}`;
+      logger.info("Task deleted successfully", { taskId, status: task.status });
+    } catch (error) {
+      logger.error(
+        "Failed to delete task",
+        error instanceof Error ? error : new Error(String(error)),
+        { taskId, taskDir },
+      );
+      throw error;
+    }
   }
 }

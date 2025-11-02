@@ -3,6 +3,7 @@
  */
 import { z } from "zod";
 import { FileStorage } from "@/memory/FileStorage";
+import { logger } from "@/logging/Logger";
 import path from "node:path";
 import os from "node:os";
 
@@ -98,10 +99,16 @@ export class ConfigManager {
     try {
       const data = await this.storage.readJSON(this.configPath);
       this.config = ConfigSchema.parse(data);
+      logger.info("Configuration loaded successfully", {
+        configPath: this.configPath,
+      });
       return this.config;
     } catch (error) {
       // Config file doesn't exist or is invalid - use defaults
-      console.log("Using default configuration");
+      logger.warn("Config file not found or invalid, using defaults", {
+        configPath: this.configPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return this.config;
     }
   }

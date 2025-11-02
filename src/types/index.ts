@@ -10,4 +10,8 @@ export type {
   Task,
   ExecutionResult,
   ExecutionError,
+  ExtendedTaskConfig,
+  TaskProgress,
+  TaskMetrics,
+  DetailedTaskResult,
 } from "./task";

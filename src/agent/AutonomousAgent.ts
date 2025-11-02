@@ -13,6 +13,7 @@ import { MetadataManager } from "@/tasks/MetadataManager";
 import { ScheduleHelper } from "@/utils/ScheduleHelper";
 import { StatusDashboard } from "@/monitoring/StatusDashboard";
 import { MetricsCollector } from "@/monitoring/MetricsCollector";
+import { logger } from "@/logging/Logger";
 import type {
   Task,
   ExecutionResult,
@@ -132,9 +133,10 @@ export class AutonomousAgent {
     this.running = true;
     this.startTime = new Date();
 
-    console.log("🌙 Autonomous Agent started");
-    console.log(`Token Budget: ${this.config.tokenBudget}`);
-    console.log(`Autonomy Level: ${this.config.autonomyLevel}`);
+    logger.info("Autonomous Agent started", {
+      tokenBudget: this.config.tokenBudget,
+      autonomyLevel: this.config.autonomyLevel,
+    });
 
     // Main execution loop
     while (this.running) {
@@ -147,16 +149,18 @@ export class AutonomousAgent {
    * Stop autonomous execution
    */
   async stop(): Promise<void> {
-    console.log("🛑 Stopping agent...");
+    logger.info("Stopping agent");
     this.running = false;
 
     // Wait for active tasks to complete
     while (this.activeTasks.size > 0) {
-      console.log(`Waiting for ${this.activeTasks.size} active tasks...`);
+      logger.info("Waiting for active tasks to complete", {
+        activeTasks: this.activeTasks.size,
+      });
       await this.sleep(1000);
     }
 
-    console.log("✅ Agent stopped gracefully");
+    logger.info("Agent stopped gracefully");
   }
 
   /**
@@ -180,21 +184,24 @@ export class AutonomousAgent {
       const budgetStatus = this.tokenBudget.getStatus();
 
       if (budgetStatus.status === "depleted") {
-        console.log("⚠️  Token budget depleted, skipping cycle");
+        logger.warn("Token budget depleted, skipping cycle", {
+          cycleId,
+          budgetStatus,
+        });
         return;
       }
 
       if (budgetStatus.status === "critical") {
-        console.log(
-          `⚠️  Token budget critical (${budgetStatus.percentageUsed.toFixed(1)}%)`,
-        );
+        logger.warn("Token budget critical", {
+          cycleId,
+          percentageUsed: budgetStatus.percentageUsed,
+        });
       }
 
       // 2. Find executable tasks
       const executableTasks = await this.findExecutableTasks();
 
       if (executableTasks.length === 0) {
-        // console.log("No executable tasks found");
         return;
       }
 
@@ -207,14 +214,23 @@ export class AutonomousAgent {
         this.config.maxConcurrentTasks,
       );
 
-      console.log(
-        `\n📋 Executing ${tasksToExecute.length} tasks (${executableTasks.length} total available)`,
-      );
+      logger.info("Executing tasks", {
+        cycleId,
+        executingCount: tasksToExecute.length,
+        totalAvailable: executableTasks.length,
+      });
 
       // Execute tasks in parallel
       const executions = tasksToExecute.map((task) =>
         this.executeTask(task).catch((error) => {
-          console.error(`Error executing task ${task.config.id}:`, error);
+          logger.error(
+            "Task execution failed",
+            error instanceof Error ? error : new Error(String(error)),
+            {
+              taskId: task.config.id,
+              cycleId,
+            },
+          );
           this.currentCycle?.errors.push({
             taskId: task.config.id,
             error: error.message,
@@ -330,10 +346,12 @@ export class AutonomousAgent {
     this.activeTasks.add(task.config.id);
 
     try {
-      console.log(`\n🚀 Starting: ${task.config.title} (${task.config.id})`);
-      console.log(
-        `   Priority: ${task.config.priority} | Tokens: ${task.config.estimatedTokens}`,
-      );
+      logger.info("Starting task execution", {
+        taskId: task.config.id,
+        title: task.config.title,
+        priority: task.config.priority,
+        estimatedTokens: task.config.estimatedTokens,
+      });
 
       // Request token allocation
       const allocation = this.tokenBudget.requestAllocation({
@@ -343,7 +361,10 @@ export class AutonomousAgent {
       });
 
       if (!allocation.approved) {
-        console.log(`   ⚠️  Allocation denied: ${allocation.reason}`);
+        logger.warn("Token allocation denied", {
+          taskId: task.config.id,
+          reason: allocation.reason,
+        });
         return;
       }
 
@@ -399,9 +420,12 @@ export class AutonomousAgent {
           }
 
           // Log recovery attempt
-          console.log(
-            `   🔄 ${recovery.strategy.reason} (attempt ${attempt + 1}/${maxRetries})`,
-          );
+          logger.info("Retrying task after error", {
+            taskId: task.config.id,
+            attempt: attempt + 1,
+            maxRetries,
+            reason: recovery.strategy.reason,
+          });
 
           // Wait with backoff
           const delayMs =
@@ -410,7 +434,14 @@ export class AutonomousAgent {
 
           attempt++;
         } catch (error) {
-          console.error(`   ❌ Unexpected error:`, error);
+          logger.error(
+            "Unexpected task execution error",
+            error instanceof Error ? error : new Error(String(error)),
+            {
+              taskId: task.config.id,
+              attempt: attempt + 1,
+            },
+          );
           attempt++;
 
           if (attempt >= maxRetries) {
@@ -461,13 +492,12 @@ export class AutonomousAgent {
     result: ExecutionResult,
     duration: number,
   ): Promise<void> {
-    console.log(
-      `   ✅ Completed in ${duration.toFixed(1)}s (${result.tokensUsed} tokens)`,
-    );
-
-    if (result.prUrls && result.prUrls.length > 0) {
-      console.log(`   🔗 PRs: ${result.prUrls.join(", ")}`);
-    }
+    logger.info("Task completed successfully", {
+      taskId: task.config.id,
+      duration,
+      tokensUsed: result.tokensUsed,
+      prUrls: result.prUrls,
+    });
 
     // Update metadata
     await this.metadataManager.recordCompletion(
@@ -489,7 +519,11 @@ export class AutonomousAgent {
 
     // Handle sub-tasks created
     if (result.subTasksCreated && result.subTasksCreated.length > 0) {
-      console.log(`   📝 Created ${result.subTasksCreated.length} sub-tasks`);
+      logger.info("Sub-tasks created", {
+        taskId: task.config.id,
+        subTasksCount: result.subTasksCreated.length,
+        subTasks: result.subTasksCreated,
+      });
       if (this.currentCycle) {
         this.currentCycle.tasksCreated += result.subTasksCreated.length;
       }
@@ -510,7 +544,12 @@ export class AutonomousAgent {
       recoverable: false,
     };
 
-    console.log(`   ❌ Failed after ${attempts} attempts: ${error.message}`);
+    logger.error("Task failed after retries", undefined, {
+      taskId: task.config.id,
+      attempts,
+      errorMessage: error.message,
+      errorType: error.type,
+    });
 
     // Record error in cycle
     if (this.currentCycle) {
@@ -579,9 +618,10 @@ export class AutonomousAgent {
 
       // Log results
       if (result.tasksCreated.length > 0) {
-        console.log(
-          `   🤖 Self-created ${result.tasksCreated.length} tasks: ${result.rulesTriggered.join(", ")}`,
-        );
+        logger.info("Self-tasks created", {
+          tasksCount: result.tasksCreated.length,
+          rules: result.rulesTriggered,
+        });
 
         // Update cycle stats
         if (this.currentCycle) {
@@ -589,7 +629,10 @@ export class AutonomousAgent {
         }
       }
     } catch (error) {
-      console.error("Failed to create self-tasks:", error);
+      logger.error(
+        "Failed to create self-tasks",
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
   }
 
@@ -665,10 +708,11 @@ export class AutonomousAgent {
    */
   processEndOfPeriod(): ReturnType<typeof this.tokenBudget.processEndOfPeriod> {
     const result = this.tokenBudget.processEndOfPeriod();
-    console.log(
-      `\n📊 End of Period: ${result.unused} unused, ${result.rollover} rolled over`,
-    );
-    console.log(`   New budget: ${result.newTotal} tokens`);
+    logger.info("End of budget period processed", {
+      unused: result.unused,
+      rollover: result.rollover,
+      newTotal: result.newTotal,
+    });
     return result;
   }
 

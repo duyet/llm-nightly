@@ -193,7 +193,7 @@ export class ContextBuilder {
         const recentChanges = metadata.changelog.slice(-5);
         for (const change of recentChanges) {
           sections.push(
-            `- **${change.timestamp}** [${change.actor}]: ${change.change}`,
+            `- **${change.timestamp}** [${change.actor}]: ${change.action}${change.details ? ` - ${change.details}` : ""}`,
           );
         }
       }
