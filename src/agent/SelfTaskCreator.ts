@@ -438,12 +438,7 @@ export class SelfTaskCreator {
       const prompt = this.generatePrompt(fullConfig);
 
       // Create task
-      const task = await this.taskManager.createTask({
-        config: fullConfig,
-        prompt,
-        status: "open",
-        attempts: 0,
-      });
+      const task = await this.taskManager.createTask(fullConfig, prompt);
 
       console.log(
         `   🤖 Self-created task: ${task.config.title} (${task.config.id})`,
