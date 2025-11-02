@@ -8,6 +8,7 @@ import type { TaskManager } from "@/tasks/TaskManager";
 import type { HealthCheck } from "@/monitoring/HealthCheck";
 import type { Logger } from "@/logging/Logger";
 import type { MemoryManager } from "@/memory/MemoryManager";
+import type { TaskConfig } from "@/types";
 
 export interface ApiServerConfig {
   port: number;
@@ -25,7 +26,7 @@ export interface ApiResponse<T = unknown> {
 }
 
 export class ApiServer {
-  private server: Server | null = null;
+  private server: Server<undefined> | null = null;
   private config: ApiServerConfig;
   private taskManager: TaskManager;
   private healthCheck: HealthCheck;
@@ -210,7 +211,7 @@ export class ApiServer {
    * Handle create task
    */
   private async handleCreateTask(request: Request): Promise<Response> {
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
 
     // Basic validation
     if (!body.title || !body.prompt) {
@@ -231,27 +232,29 @@ export class ApiServer {
     };
 
     // Create full TaskConfig
-    const config = {
+    const priority = (priorityMap[(body.priority as string) || "normal"] ||
+      3) as 1 | 2 | 3 | 4 | 5;
+    const config: TaskConfig = {
       id: taskId,
-      title: body.title,
-      priority: priorityMap[body.priority || "normal"] || 3,
+      title: body.title as string,
+      priority,
       autonomyLevel: (body.autonomyLevel || "semi") as
         | "full"
         | "semi"
         | "manual",
-      estimatedTokens: body.estimatedTokens || 5000,
-      dependencies: body.dependencies || [],
-      tags: body.tags || [],
+      estimatedTokens: (body.estimatedTokens as number) || 5000,
+      dependencies: (body.dependencies as string[]) || [],
+      tags: (body.tags as string[]) || [],
       createdAt: new Date().toISOString(),
       createdBy: "human" as const,
-      maxRetries: body.maxRetries || 3,
-      timeout: body.timeout || 300,
+      maxRetries: (body.maxRetries as number) || 3,
+      timeout: (body.timeout as number) || 300,
     };
 
     const task = await this.taskManager.createTask(
       config,
-      body.prompt,
-      body.context,
+      body.prompt as string,
+      body.context as string | undefined,
     );
 
     return this.successResponse(task, 201);

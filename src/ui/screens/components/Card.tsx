@@ -69,7 +69,6 @@ export const Card: React.FC<CardProps> = ({ task, selected }) => {
       borderStyle="single"
       borderColor={selected ? "cyan" : "gray"}
       paddingX={1}
-      backgroundColor={backgroundColor}
     >
       {/* Card header */}
       <Box justifyContent="space-between">
