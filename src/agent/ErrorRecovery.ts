@@ -104,27 +104,6 @@ export class ErrorRecovery {
           backoffDelay,
         };
 
-      case "dependency":
-        return {
-          shouldRetry: false,
-          strategy: {
-            type: "skip",
-            reason:
-              "Dependency not satisfied - will retry when dependency completes",
-          },
-          backoffDelay: 0,
-        };
-
-      case "validation":
-        return {
-          shouldRetry: false,
-          strategy: {
-            type: "abort",
-            reason: "Validation error - task configuration invalid",
-          },
-          backoffDelay: 0,
-        };
-
       case "execution":
         return {
           shouldRetry: true,

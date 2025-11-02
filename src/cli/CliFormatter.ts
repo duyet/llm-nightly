@@ -3,7 +3,7 @@
  */
 import chalk from "chalk";
 import type { Task, TaskStatus } from "@/types";
-import type { HealthCheckResult } from "@/monitoring/HealthCheck";
+import type { HealthCheckResult, SystemHealth } from "@/monitoring/HealthCheck";
 
 export class CliFormatter {
   /**
@@ -60,6 +60,7 @@ export class CliFormatter {
         "in-progress": { icon: "◐", color: chalk.yellow },
         done: { icon: "●", color: chalk.green },
         blocked: { icon: "⊗", color: chalk.red },
+        cancelled: { icon: "✕", color: chalk.gray },
       };
 
     const { icon, color } = statusMap[status] || {
@@ -135,7 +136,7 @@ export class CliFormatter {
   /**
    * Format health check results
    */
-  static healthCheck(result: HealthCheckResult): string {
+  static healthCheck(result: SystemHealth): string {
     const overallMap = {
       healthy: { icon: "✓", color: chalk.green },
       degraded: { icon: "⚠", color: chalk.yellow },

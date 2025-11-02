@@ -349,7 +349,7 @@ export class MetricsCollector {
 
     // Count tasks by status (simplified - would need actual task status)
     const total = metrics.length;
-    const completed = metrics.filter((m) => m.duration > 0).length;
+    const completed = metrics.filter((m) => (m.duration || 0) > 0).length;
     const failed = 0; // Would need error data
     const cancelled = 0; // Would need status data
 
@@ -470,7 +470,8 @@ export class MetricsCollector {
       let dailyMetrics: TaskMetrics[] = [];
 
       try {
-        dailyMetrics = await this.storage.readJSON(metricsPath);
+        const stored = await this.storage.readJSON<TaskMetrics[]>(metricsPath);
+        dailyMetrics = stored || [];
       } catch {
         // File doesn't exist yet
       }
@@ -502,9 +503,11 @@ export class MetricsCollector {
       );
 
       try {
-        const dailyMetrics: TaskMetrics[] =
-          await this.storage.readJSON(metricsPath);
-        allMetrics.push(...dailyMetrics);
+        const dailyMetrics =
+          await this.storage.readJSON<TaskMetrics[]>(metricsPath);
+        if (dailyMetrics) {
+          allMetrics.push(...dailyMetrics);
+        }
       } catch {
         // File doesn't exist, skip
       }
@@ -541,7 +544,9 @@ export class MetricsCollector {
       try {
         let existingMetrics: TaskMetrics[] = [];
         try {
-          existingMetrics = await this.storage.readJSON(metricsPath);
+          const stored =
+            await this.storage.readJSON<TaskMetrics[]>(metricsPath);
+          existingMetrics = stored || [];
         } catch {
           // File doesn't exist yet
         }

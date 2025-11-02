@@ -88,9 +88,10 @@ export class Scheduler {
         });
 
         // Track next window if available
-        if (scheduleCheck.nextWindow) {
-          if (scheduleCheck.nextWindow < report.nextScheduleCheck) {
-            report.nextScheduleCheck = scheduleCheck.nextWindow;
+        if (scheduleCheck.nextAvailableTime) {
+          const nextTime = new Date(scheduleCheck.nextAvailableTime);
+          if (nextTime < report.nextScheduleCheck) {
+            report.nextScheduleCheck = nextTime;
           }
         }
 
