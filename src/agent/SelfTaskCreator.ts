@@ -6,6 +6,7 @@ import type { Task, TaskConfig, Priority } from "@/types";
 import { TaskManager } from "@/tasks/TaskManager";
 import { TaskLoader } from "@/tasks/TaskLoader";
 import { MetricsCollector } from "@/monitoring/MetricsCollector";
+import { logger } from "@/logging/Logger";
 import type { HealthStatus } from "@/monitoring/StatusDashboard";
 
 export interface SelfTaskRule {
@@ -401,7 +402,7 @@ export class SelfTaskCreator {
           }
         }
       } catch (error) {
-        console.error(`Failed to create task from rule ${rule.name}:`, error);
+        logger.error(`Failed to create task from rule ${rule.name}`, error instanceof Error ? error : undefined);
         result.skippedRules.push({
           rule: rule.name,
           reason: `Error: ${error instanceof Error ? error.message : String(error)}`,
@@ -440,13 +441,13 @@ export class SelfTaskCreator {
       // Create task
       const task = await this.taskManager.createTask(fullConfig, prompt);
 
-      console.log(
+      logger.info(
         `   🤖 Self-created task: ${task.config.title} (${task.config.id})`,
       );
 
       return task.config.id;
     } catch (error) {
-      console.error("Failed to create self-task:", error);
+      logger.error("Failed to create self-task", error instanceof Error ? error : undefined);
       return null;
     }
   }

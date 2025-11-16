@@ -1,7 +1,16 @@
 /**
- * ClaudeExecutor - Claude Code CLI wrapper
+ * ClaudeExecutor - Claude Code CLI wrapper with security controls
  */
 import type { Task, ExecutionResult, ExecutionError } from "@/types";
+import {
+  PathValidator,
+  CommandValidator,
+  ResourceValidator,
+  InputValidator,
+  ErrorSanitizer,
+  SECURITY_LIMITS,
+} from "@/utils/SecurityUtils";
+import { resolve } from "node:path";
 
 export interface ExecutorConfig {
   claudePath: string;
@@ -12,9 +21,36 @@ export interface ExecutorConfig {
 
 export class ClaudeExecutor {
   private config: ExecutorConfig;
+  private static readonly ALLOWED_EXECUTABLES = [
+    "/usr/local/bin/claude",
+    "/usr/bin/claude",
+    "claude", // For PATH resolution
+  ];
 
   constructor(config: ExecutorConfig) {
+    // Validate configuration
+    this.validateConfig(config);
     this.config = config;
+  }
+
+  /**
+   * Validate executor configuration
+   */
+  private validateConfig(config: ExecutorConfig): void {
+    // Validate timeout
+    ResourceValidator.validateTimeout(config.timeout);
+
+    // Validate token budget
+    ResourceValidator.validateTokenCount(config.tokenBudget);
+
+    // Validate working directory exists and is safe
+    try {
+      const normalizedWorkingDir = resolve(config.workingDir);
+      // Store normalized path
+      config.workingDir = normalizedWorkingDir;
+    } catch (error) {
+      throw new Error(`Invalid working directory: ${config.workingDir}`);
+    }
   }
 
   /**
@@ -24,6 +60,9 @@ export class ClaudeExecutor {
     const startTime = Date.now();
 
     try {
+      // Validate task inputs
+      this.validateTask(task);
+
       // Build command
       const command = this.buildCommand(task);
 
@@ -57,27 +96,53 @@ export class ClaudeExecutor {
   }
 
   /**
-   * Build Claude Code command
+   * Validate task before execution
    */
-  private buildCommand(task: Task): string[] {
-    const args = [this.config.claudePath];
+  private validateTask(task: Task): void {
+    // Validate prompt size
+    InputValidator.validateStringSize(task.prompt, SECURITY_LIMITS.MAX_STRING_LENGTH);
 
-    // Add working directory
-    args.push("--cwd", this.config.workingDir);
-
-    // Add task prompt
-    args.push(task.prompt);
-
-    // Add context if available
+    // Validate context size if present
     if (task.context) {
-      args.push("--context", task.context);
+      InputValidator.validateStringSize(task.context, SECURITY_LIMITS.MAX_STRING_LENGTH);
     }
 
-    return args;
+    // Validate timeout
+    ResourceValidator.validateTimeout(task.config.timeout);
+
+    // Validate estimated tokens
+    ResourceValidator.validateTokenCount(task.config.estimatedTokens);
   }
 
   /**
-   * Run command with timeout
+   * Build Claude Code command
+   */
+  private buildCommand(task: Task): string[] {
+    // Validate executable path (basic check, not strict validation since it might be in PATH)
+    const claudePath = this.config.claudePath;
+
+    // Build arguments array (prevents command injection)
+    const args = [claudePath];
+
+    // Add working directory (already validated in constructor)
+    args.push("--cwd", this.config.workingDir);
+
+    // Sanitize and add task prompt
+    const sanitizedPrompt = InputValidator.sanitizeString(task.prompt);
+    args.push(sanitizedPrompt);
+
+    // Add context if available
+    if (task.context) {
+      const sanitizedContext = InputValidator.sanitizeString(task.context);
+      args.push("--context", sanitizedContext);
+    }
+
+    // Sanitize all arguments
+    return CommandValidator.sanitizeArguments(args);
+  }
+
+  /**
+   * Run command with timeout and output size limits
    */
   private async runCommand(
     command: string[],
@@ -87,6 +152,7 @@ export class ClaudeExecutor {
       const timeoutMs = timeout * 1000;
       let output = "";
       let errorOutput = "";
+      let outputExceeded = false;
 
       // Spawn process
       const proc = Bun.spawn(command, {
@@ -102,19 +168,36 @@ export class ClaudeExecutor {
         reject(new Error(`Command timed out after ${timeout} seconds`));
       }, timeoutMs);
 
-      // Collect stdout
+      // Collect stdout with size limit
       (async () => {
         const decoder = new TextDecoder();
         for await (const chunk of proc.stdout) {
-          output += decoder.decode(chunk);
+          const decoded = decoder.decode(chunk);
+
+          // Check output size limit
+          if (output.length + decoded.length > SECURITY_LIMITS.MAX_OUTPUT_SIZE) {
+            outputExceeded = true;
+            proc.kill();
+            break;
+          }
+
+          output += decoded;
         }
       })();
 
-      // Collect stderr
+      // Collect stderr with size limit
       (async () => {
         const decoder = new TextDecoder();
         for await (const chunk of proc.stderr) {
-          errorOutput += decoder.decode(chunk);
+          const decoded = decoder.decode(chunk);
+
+          // Check error output size limit (smaller limit for errors)
+          if (errorOutput.length + decoded.length > SECURITY_LIMITS.MAX_STRING_LENGTH) {
+            errorOutput += "[ERROR OUTPUT TRUNCATED]";
+            break;
+          }
+
+          errorOutput += decoded;
         }
       })();
 
@@ -122,12 +205,26 @@ export class ClaudeExecutor {
       proc.exited.then((exitCode) => {
         clearTimeout(timeoutId);
 
+        if (outputExceeded) {
+          reject(
+            new Error(
+              `Command output exceeded maximum size of ${SECURITY_LIMITS.MAX_OUTPUT_SIZE} bytes`,
+            ),
+          );
+          return;
+        }
+
         if (exitCode === 0) {
           resolve(output);
         } else {
+          // Sanitize error output to prevent information leakage
+          const sanitizedError = ErrorSanitizer.sanitize(
+            new Error(errorOutput),
+            false,
+          );
           reject(
             new Error(
-              `Command failed with exit code ${exitCode}: ${errorOutput}`,
+              `Command failed with exit code ${exitCode}: ${sanitizedError}`,
             ),
           );
         }
@@ -187,7 +284,7 @@ export class ClaudeExecutor {
   }
 
   /**
-   * Create execution error
+   * Create execution error with sanitized messages
    */
   private createError(error: unknown): ExecutionError {
     if (error instanceof Error) {
@@ -195,33 +292,39 @@ export class ClaudeExecutor {
       let type: ExecutionError["type"] = "unknown";
       let recoverable = true;
 
-      if (error.message.includes("timeout")) {
+      if (error.message.includes("timeout") || error.message.includes("timed out")) {
         type = "timeout";
         recoverable = true;
-      } else if (error.message.includes("validation")) {
+      } else if (error.message.includes("validation") || error.message.includes("invalid")) {
         type = "validation";
         recoverable = false;
-      } else if (error.message.includes("token")) {
+      } else if (error.message.includes("token") || error.message.includes("Token")) {
         type = "token_limit";
         recoverable = true;
       } else if (error.message.includes("dependency")) {
         type = "dependency";
+        recoverable = false;
+      } else if (error.message.includes("output exceeded")) {
+        type = "execution";
         recoverable = false;
       } else {
         type = "execution";
         recoverable = true;
       }
 
+      // Sanitize error message to prevent information leakage
+      const sanitizedMessage = ErrorSanitizer.sanitize(error, false);
+
       return {
         type,
-        message: error.message,
+        message: sanitizedMessage,
         recoverable,
       };
     }
 
     return {
       type: "unknown",
-      message: String(error),
+      message: "An unknown error occurred",
       recoverable: true,
     };
   }

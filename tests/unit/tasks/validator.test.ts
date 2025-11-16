@@ -137,6 +137,10 @@ describe("TaskValidator", () => {
         success: false,
         tokensUsed: 500,
         duration: 15,
+        artifacts: [],
+        subTasksCreated: [],
+        prUrls: [],
+        deploymentUrls: [],
         error: {
           type: "timeout",
           message: "Task timed out",
@@ -153,6 +157,10 @@ describe("TaskValidator", () => {
         success: true,
         tokensUsed: -100,
         duration: 30,
+        artifacts: [],
+        subTasksCreated: [],
+        prUrls: [],
+        deploymentUrls: [],
       };
 
       const validation = TaskValidator.validateResult(result);
@@ -258,10 +266,13 @@ describe("TaskValidator", () => {
 
   describe("canRetry", () => {
     test("disallows retry on success", () => {
-      const result: ExecutionResult = {
+      const result = {
         success: true,
         tokensUsed: 1000,
         duration: 30,
+        artifacts: [],
+        subTasksCreated: [],
+        prUrls: [],
       };
 
       const retryCheck = TaskValidator.canRetry(validTask, result);
@@ -271,12 +282,15 @@ describe("TaskValidator", () => {
 
     test("disallows retry when max retries exceeded", () => {
       const taskMaxRetries: Task = { ...validTask, attempts: 3 };
-      const result: ExecutionResult = {
+      const result = {
         success: false,
         tokensUsed: 500,
         duration: 15,
+        artifacts: [],
+        subTasksCreated: [],
+        prUrls: [],
         error: {
-          type: "execution",
+          type: "execution" as const,
           message: "Failed",
           recoverable: true,
         },
@@ -288,12 +302,15 @@ describe("TaskValidator", () => {
     });
 
     test("disallows retry for non-recoverable errors", () => {
-      const result: ExecutionResult = {
+      const result = {
         success: false,
         tokensUsed: 500,
         duration: 15,
+        artifacts: [],
+        subTasksCreated: [],
+        prUrls: [],
         error: {
-          type: "validation",
+          type: "validation" as const,
           message: "Invalid input",
           recoverable: false,
         },
@@ -305,12 +322,15 @@ describe("TaskValidator", () => {
     });
 
     test("allows retry for recoverable errors", () => {
-      const result: ExecutionResult = {
+      const result = {
         success: false,
         tokensUsed: 500,
         duration: 15,
+        artifacts: [],
+        subTasksCreated: [],
+        prUrls: [],
         error: {
-          type: "timeout",
+          type: "timeout" as const,
           message: "Timed out",
           recoverable: true,
         },

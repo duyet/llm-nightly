@@ -4,18 +4,22 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  build:
-    name: Build Release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+  # Run full validation before release
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -26,43 +30,98 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run tests
-        run: bun test
+      - name: Run validation
+        run: bun run validate
+
+  # Build release artifacts for multiple platforms
+  build:
+    name: Build (${{ matrix.os }})
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            archive_name: linux
+            archive_ext: tar.gz
+          - os: macos-latest
+            archive_name: macos
+            archive_ext: tar.gz
+          - os: windows-latest
+            archive_name: windows
+            archive_ext: zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Build
         run: bun run build
 
-      - name: Package for ${{ matrix.os }}
+      - name: Prepare release directory
+        shell: bash
         run: |
           mkdir -p release
           cp -r dist/* release/
-          cp README.md LICENSE release/ || true
+          cp README.md release/ 2>/dev/null || true
+          cp LICENSE release/ 2>/dev/null || true
+          cp package.json release/ 2>/dev/null || true
 
       - name: Create archive (Unix)
         if: runner.os != 'Windows'
         run: |
           cd release
-          tar -czf ../llm-nightly-${{ runner.os }}.tar.gz *
+          tar -czf ../llm-nightly-${{ matrix.archive_name }}.tar.gz *
 
       - name: Create archive (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           cd release
-          7z a ../llm-nightly-Windows.zip *
+          7z a ../llm-nightly-${{ matrix.archive_name }}.zip *
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: llm-nightly-${{ runner.os }}
-          path: |
-            *.tar.gz
-            *.zip
+          name: llm-nightly-${{ matrix.archive_name }}
+          path: llm-nightly-${{ matrix.archive_name }}.*
+          retention-days: 90
 
+  # Create GitHub release with all artifacts
   release:
-    name: Create Release
+    name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
 
@@ -72,68 +131,106 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display artifact structure
+        run: ls -R artifacts/
+
+      - name: Move artifacts to root
+        run: |
+          mkdir -p release-files
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release-files/ \;
+          ls -lh release-files/
 
       - name: Generate changelog
         id: changelog
         run: |
-          # Get the previous tag
           PREV_TAG=$(git describe --abbrev=0 --tags $(git rev-list --tags --skip=1 --max-count=1) 2>/dev/null || echo "")
 
           if [ -z "$PREV_TAG" ]; then
-            echo "First release - no changelog"
-            echo "changelog=First release of LLM Nightly" >> $GITHUB_OUTPUT
+            echo "changelog=First release of LLM Nightly 🎉" >> $GITHUB_OUTPUT
           else
             echo "Generating changelog from $PREV_TAG to ${{ github.ref_name }}"
             CHANGELOG=$(git log --pretty=format:"- %s (%h)" $PREV_TAG..${{ github.ref_name }})
-            echo "changelog<<EOF" >> $GITHUB_OUTPUT
-            echo "$CHANGELOG" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            {
+              echo "changelog<<EOF"
+              echo "$CHANGELOG"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
           fi
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
           body: |
+            # LLM Nightly ${{ steps.version.outputs.version }}
+
             ## What's Changed
 
             ${{ steps.changelog.outputs.changelog }}
 
             ## Installation
 
-            ### Using Bun
+            ### Quick Start with Bun
             ```bash
-            bun install llm-nightly
+            # Clone and install
+            git clone https://github.com/${{ github.repository }}.git
+            cd llm-nightly
+            bun install
+            bun run src/index.ts
             ```
 
-            ### From Source
+            ### Download Pre-built Binaries
+
+            Choose the appropriate archive for your operating system:
+            - **Linux**: `llm-nightly-linux.tar.gz`
+            - **macOS**: `llm-nightly-macos.tar.gz`
+            - **Windows**: `llm-nightly-windows.zip`
+
             ```bash
-            # Download the appropriate archive for your OS
-            # Extract and run
+            # Extract (Linux/macOS)
             tar -xzf llm-nightly-*.tar.gz
             cd llm-nightly
             bun install
             bun run src/index.ts
             ```
 
+            ## Requirements
+
+            - [Bun](https://bun.sh) runtime (v1.0.0 or later)
+            - [Claude Code CLI](https://www.anthropic.com) - Official Anthropic CLI tool
+
             ## Documentation
 
-            See [README.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md) for full documentation.
-          files: |
-            llm-nightly-*/*.tar.gz
-            llm-nightly-*/*.zip
+            See the [README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md) for full documentation.
+
+            ## Support
+
+            For issues or questions, please [open an issue](https://github.com/${{ github.repository }}/issues/new).
+          files: release-files/*
           draft: false
-          prerelease: ${{ contains(github.ref, '-') }}
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Publish to npm (optional - only for stable releases)
   publish-npm:
     name: Publish to npm
     needs: release
     runs-on: ubuntu-latest
-    if: "!contains(github.ref, '-')"  # Only publish stable releases
+    if: "!contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc')"
 
     steps:
       - name: Checkout code
@@ -144,6 +241,12 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Setup Node.js (for npm publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -151,8 +254,6 @@ jobs:
         run: bun run build
 
       - name: Publish to npm
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          npm publish --access public
+        run: npm publish --access public
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

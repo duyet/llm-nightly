@@ -24,12 +24,13 @@ export class TaskLoader {
   private organizer: FolderOrganizer;
 
   constructor(basePath: string) {
-    this.storage = new FileStorage();
+    this.storage = new FileStorage({ baseDir: basePath });
     this.organizer = new FolderOrganizer(basePath);
   }
 
   /**
    * Load a single task by ID
+   * OPTIMIZED: Parallel file reads for better I/O performance
    */
   async loadTask(
     taskId: string,
@@ -54,9 +55,19 @@ export class TaskLoader {
     }
 
     try {
-      // Load config
       const configPath = `${taskPath}/config.json`;
-      const config = await this.storage.readJSON<TaskConfig>(configPath);
+      const promptPath = `${taskPath}/prompt.md`;
+      const contextPath = `${taskPath}/context.md`;
+      const metadataPath = `${taskPath}/metadata.json`;
+
+      // OPTIMIZATION: Load all required files in parallel
+      const [config, prompt, contextContent, metadata] = await Promise.all([
+        this.storage.readJSON<TaskConfig>(configPath),
+        this.storage.readMarkdown(promptPath),
+        includeContext ? this.storage.readMarkdown(contextPath) : Promise.resolve(null),
+        includeMetadata ? this.storage.readJSON(metadataPath) : Promise.resolve(null),
+      ]);
+
       if (!config) {
         return {
           task: null,
@@ -72,22 +83,11 @@ export class TaskLoader {
         }
       }
 
-      // Load prompt
-      const promptPath = `${taskPath}/prompt.md`;
-      const prompt = await this.storage.readMarkdown(promptPath);
       if (!prompt) {
         return {
           task: null,
           errors: [`Prompt file not found: ${promptPath}`],
         };
-      }
-
-      // Load context if requested
-      let context: string | undefined;
-      if (includeContext) {
-        const contextPath = `${taskPath}/context.md`;
-        const contextContent = await this.storage.readMarkdown(contextPath);
-        context = contextContent || undefined;
       }
 
       // Determine status from path
@@ -97,7 +97,7 @@ export class TaskLoader {
       const task: Task = {
         config,
         prompt,
-        context,
+        context: contextContent || undefined,
         status,
         attempts: 0,
       };
@@ -110,14 +110,9 @@ export class TaskLoader {
         }
       }
 
-      // Load metadata if requested
-      if (includeMetadata) {
-        const metadataPath = `${taskPath}/metadata.json`;
-        const metadata = await this.storage.readJSON(metadataPath);
-        if (metadata) {
-          // Attach metadata to task (extend Task type if needed)
-          (task as any).metadata = metadata;
-        }
+      // Attach metadata if loaded
+      if (metadata) {
+        (task as any).metadata = metadata;
       }
 
       return {
@@ -137,26 +132,28 @@ export class TaskLoader {
 
   /**
    * Load all tasks with a specific status
+   * OPTIMIZED: Parallel loading instead of sequential
    */
   async loadTasksByStatus(
     status: TaskStatus,
     options: LoadOptions = {},
   ): Promise<Task[]> {
     const taskIds = await this.organizer.listTasksInStatus(status);
-    const tasks: Task[] = [];
 
-    for (const taskId of taskIds) {
-      const result = await this.loadTask(taskId, options);
-      if (result.task) {
-        tasks.push(result.task);
-      }
-    }
+    // Load all tasks in parallel
+    const results = await Promise.all(
+      taskIds.map(taskId => this.loadTask(taskId, options))
+    );
 
-    return tasks;
+    // Filter out failed loads
+    return results
+      .filter(result => result.task !== null)
+      .map(result => result.task!);
   }
 
   /**
    * Load all tasks
+   * OPTIMIZED: Parallel loading of all statuses
    */
   async loadAllTasks(options: LoadOptions = {}): Promise<Task[]> {
     const statuses: TaskStatus[] = [
@@ -167,14 +164,13 @@ export class TaskLoader {
       "cancelled",
     ];
 
-    const allTasks: Task[] = [];
+    // Load all statuses in parallel
+    const tasksByStatus = await Promise.all(
+      statuses.map(status => this.loadTasksByStatus(status, options))
+    );
 
-    for (const status of statuses) {
-      const tasks = await this.loadTasksByStatus(status, options);
-      allTasks.push(...tasks);
-    }
-
-    return allTasks;
+    // Flatten results
+    return tasksByStatus.flat();
   }
 
   /**

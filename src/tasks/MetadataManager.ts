@@ -39,7 +39,7 @@ export class MetadataManager {
   private organizer: FolderOrganizer;
 
   constructor(basePath: string) {
-    this.storage = new FileStorage();
+    this.storage = new FileStorage({ baseDir: basePath });
     this.organizer = new FolderOrganizer(basePath);
   }
 

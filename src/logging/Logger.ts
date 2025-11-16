@@ -64,7 +64,7 @@ export class Logger {
       maxFiles: 5,
       ...config,
     };
-    this.storage = new FileStorage();
+    this.storage = new FileStorage({ baseDir: this.config.basePath });
   }
 
   /**
@@ -183,7 +183,10 @@ export class Logger {
     // File logging
     if (this.config.enableFile) {
       const writePromise = this.logToFile(entry).catch((err) => {
-        console.error("Failed to write log to file:", err);
+        // Silently ignore ENOENT errors (file/directory deleted during cleanup)
+        if (err.code !== "ENOENT") {
+          console.error("Failed to write log to file:", err.message || err);
+        }
       });
       this.pendingWrites.push(writePromise);
 
@@ -200,10 +203,17 @@ export class Logger {
   /**
    * Wait for all pending log writes to complete
    */
-  private async flushPendingWrites(): Promise<void> {
+  async flush(): Promise<void> {
     if (this.pendingWrites.length > 0) {
       await Promise.all(this.pendingWrites);
     }
+  }
+
+  /**
+   * @deprecated Use flush() instead
+   */
+  private async flushPendingWrites(): Promise<void> {
+    await this.flush();
   }
 
   /**
@@ -300,7 +310,16 @@ export class Logger {
    */
   private async rotateLogsIfNeeded(logFile: string): Promise<void> {
     try {
-      const stats = await Bun.file(logFile).size;
+      // Check if file exists before trying to access its size
+      const file = Bun.file(logFile);
+      const fileExists = await file.exists();
+
+      if (!fileExists) {
+        // File doesn't exist yet, nothing to rotate
+        return;
+      }
+
+      const stats = await file.size;
 
       if (stats > (this.config.maxFileSize || 10 * 1024 * 1024)) {
         // Rotate: rename current log to .1, .2, etc.
@@ -325,12 +344,15 @@ export class Logger {
           }
         }
 
-        // Move current log to .1
-        await this.storage.move(logFile, `${logFile}.1`);
+        // Move current log to .1 (check again if file still exists)
+        const currentFileExists = await this.storage.exists(logFile);
+        if (currentFileExists) {
+          await this.storage.move(logFile, `${logFile}.1`);
+        }
       }
     } catch (error) {
-      // Ignore rotation errors
-      console.error("Log rotation error:", error);
+      // Ignore rotation errors - they are logged but don't affect logging
+      // This can happen during concurrent writes or if files are deleted externally
     }
   }
 

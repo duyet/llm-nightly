@@ -21,10 +21,10 @@ describe("ApiServer", () => {
   let storage: FileStorage;
 
   // Helper to create a test task config
-  const createTestTaskConfig = (id: string, title: string) => ({
+  const createTestTaskConfig = (id: string, title: string, priority: 1 | 2 | 3 | 4 | 5 = 3) => ({
     id,
     title,
-    priority: 3,
+    priority: priority as 1 | 2 | 3 | 4 | 5,
     autonomyLevel: "semi" as const,
     estimatedTokens: 5000,
     dependencies: [],
@@ -39,7 +39,7 @@ describe("ApiServer", () => {
     // Create test directory
     await fs.mkdir(testBasePath, { recursive: true });
 
-    storage = new FileStorage();
+    storage = new FileStorage({ baseDir: testBasePath });
     logger = new Logger({
       level: "info",
       basePath: path.join(testBasePath, "logs"),
@@ -47,7 +47,7 @@ describe("ApiServer", () => {
       enableFile: true,
     });
 
-    memory = new MemoryManager(testBasePath, storage);
+    memory = new MemoryManager(testBasePath);
     healthCheck = new HealthCheck({
       basePath: testBasePath,
       claudePath: "claude",
@@ -86,13 +86,13 @@ describe("ApiServer", () => {
     test("GET /health returns health status", async () => {
       const info = apiServer.getInfo();
       const response = await fetch(`http://${info.host}:${info.port}/health`);
-      const data = await response.json();
+      const data = await response.json() as { success: boolean; data?: { overall?: string }; timestamp?: string };
 
       // Accept 200 (healthy/degraded) or 503 (down/critical)
       expect([200, 503]).toContain(response.status);
       expect(data.success).toBe(true);
       expect(data.data).toBeDefined();
-      expect(data.data.overall).toBeDefined();
+      expect(data.data?.overall).toBeDefined();
       expect(data.timestamp).toBeDefined();
     });
   });
@@ -110,7 +110,7 @@ describe("ApiServer", () => {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(201);
       expect(data.success).toBe(true);
@@ -130,7 +130,7 @@ describe("ApiServer", () => {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(400);
       expect(data.success).toBe(false);
@@ -146,7 +146,7 @@ describe("ApiServer", () => {
         {
           id: `task-${timestamp}-test`,
           title: "Test Task",
-          priority: 3,
+          priority: 3 as 1 | 2 | 3 | 4 | 5,
           autonomyLevel: "semi",
           estimatedTokens: 5000,
           dependencies: [],
@@ -160,7 +160,7 @@ describe("ApiServer", () => {
       );
 
       const response = await fetch(`http://${info.host}:${info.port}/tasks`);
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -192,7 +192,7 @@ describe("ApiServer", () => {
       const response = await fetch(
         `http://${info.host}:${info.port}/tasks?status=open`,
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -216,7 +216,7 @@ describe("ApiServer", () => {
       const response = await fetch(
         `http://${info.host}:${info.port}/tasks/${taskId}`,
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -231,7 +231,7 @@ describe("ApiServer", () => {
       const response = await fetch(
         `http://${info.host}:${info.port}/tasks/${nonExistentId}`,
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       // Should return 404 or empty result
       expect([200, 404]).toContain(response.status);
@@ -257,7 +257,7 @@ describe("ApiServer", () => {
           method: "POST",
         },
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -275,20 +275,20 @@ describe("ApiServer", () => {
       await taskManager.createTask(
         {
           ...createTestTaskConfig(`task-${timestamp}-1`, "Task 1"),
-          priority: 2,
+          priority: 2 as 1 | 2 | 3 | 4 | 5,
         },
         "Test",
       );
       await taskManager.createTask(
         {
           ...createTestTaskConfig(`task-${timestamp}-2`, "Task 2"),
-          priority: 4,
+          priority: 4 as 1 | 2 | 3 | 4 | 5,
         },
         "Test",
       );
 
       const response = await fetch(`http://${info.host}:${info.port}/metrics`);
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -314,7 +314,7 @@ describe("ApiServer", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const response = await fetch(`http://${info.host}:${info.port}/logs`);
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -332,7 +332,7 @@ describe("ApiServer", () => {
       const response = await fetch(
         `http://${info.host}:${info.port}/logs?level=error`,
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -353,7 +353,7 @@ describe("ApiServer", () => {
       const response = await fetch(
         `http://${info.host}:${info.port}/logs?search=Authentication`,
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
@@ -377,28 +377,32 @@ describe("ApiServer", () => {
 
       // Record some history
       await memory.recordExecution(task, {
-        status: "success",
+        success: true,
         output: "Test output",
         tokensUsed: 100,
         duration: 1000,
+        artifacts: [],
+        subTasksCreated: [],
+        prUrls: [],
+        deploymentUrls: [],
       });
 
       const response = await fetch(
         `http://${info.host}:${info.port}/history?taskId=${taskId}`,
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
       expect(Array.isArray(data.data)).toBe(true);
       expect(data.data.length).toBeGreaterThan(0);
-      expect(data.data[0].status).toBe("success");
+      expect(data.data[0].result.success).toBe(true);
     });
 
     test("GET /history without taskId returns error", async () => {
       const info = apiServer.getInfo();
       const response = await fetch(`http://${info.host}:${info.port}/history`);
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(400);
       expect(data.success).toBe(false);
@@ -434,7 +438,7 @@ describe("ApiServer", () => {
       const response = await fetch(
         `http://${info.host}:${info.port}/unknown-route`,
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(404);
       expect(data.success).toBe(false);
@@ -449,7 +453,7 @@ describe("ApiServer", () => {
         body: "not-valid-json",
       });
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(400);
     });
   });
 

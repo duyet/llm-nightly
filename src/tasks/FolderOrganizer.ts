@@ -1,7 +1,10 @@
 /**
- * FolderOrganizer - Manage folder-based task organization
+ * FolderOrganizer - Manage folder-based task organization with security controls
  */
 import type { TaskStatus } from "@/types";
+import { mkdir, rm, rename as fsRename } from "node:fs/promises";
+import { join } from "node:path";
+import { PathValidator } from "@/utils/SecurityUtils";
 
 export interface FolderStructure {
   taskPath: string;
@@ -23,23 +26,25 @@ export class FolderOrganizer {
     taskId: string,
     status: TaskStatus = "open",
   ): Promise<FolderStructure> {
-    const taskPath = this.getTaskPath(taskId, status);
+    // Validate task ID
+    const validatedTaskId = PathValidator.validateTaskId(taskId);
+    const taskPath = this.getTaskPath(validatedTaskId, status);
 
-    // Create task directory
-    await Bun.$`mkdir -p ${taskPath}`;
+    // Create task directory using fs.mkdir instead of shell command
+    await mkdir(taskPath, { recursive: true });
 
     // Create additional directories for in-progress and done tasks
     if (status === "in-progress") {
-      await Bun.$`mkdir -p ${taskPath}/artifacts`;
+      await mkdir(join(taskPath, "artifacts"), { recursive: true });
     }
 
     if (status === "done") {
-      const resultsPath = this.getResultsPath(taskId);
-      await Bun.$`mkdir -p ${resultsPath}/artifacts`;
-      await Bun.$`mkdir -p ${resultsPath}/screenshots`;
+      const resultsPath = this.getResultsPath(validatedTaskId);
+      await mkdir(join(resultsPath, "artifacts"), { recursive: true });
+      await mkdir(join(resultsPath, "screenshots"), { recursive: true });
     }
 
-    return this.getFolderStructure(taskId, status);
+    return this.getFolderStructure(validatedTaskId, status);
   }
 
   /**
@@ -50,11 +55,12 @@ export class FolderOrganizer {
     fromStatus: TaskStatus,
     toStatus: TaskStatus,
   ): Promise<void> {
-    // Validate transition
+    // Validate task ID and transition
+    const validatedTaskId = PathValidator.validateTaskId(taskId);
     this.validateTransition(fromStatus, toStatus);
 
-    const fromPath = this.getTaskPath(taskId, fromStatus);
-    const toPath = this.getTaskPath(taskId, toStatus);
+    const fromPath = this.getTaskPath(validatedTaskId, fromStatus);
+    const toPath = this.getTaskPath(validatedTaskId, toStatus);
 
     // Check source exists
     const sourceExists = await this.folderExists(fromPath);
@@ -63,25 +69,29 @@ export class FolderOrganizer {
     }
 
     // Create destination parent directory
-    await Bun.$`mkdir -p ${this.basePath}/tasks/${toStatus}`;
+    await mkdir(join(this.basePath, "tasks", toStatus), { recursive: true });
 
     try {
-      // Atomic move operation
-      await Bun.$`mv ${fromPath} ${toPath}`;
+      // Atomic move operation using fs.rename
+      await fsRename(fromPath, toPath);
 
       // If moving to done, also create results folder
       if (toStatus === "done") {
-        const resultsPath = this.getResultsPath(taskId);
-        await Bun.$`mkdir -p ${resultsPath}`;
-        await Bun.$`mkdir -p ${resultsPath}/artifacts`;
-        await Bun.$`mkdir -p ${resultsPath}/screenshots`;
+        const resultsPath = this.getResultsPath(validatedTaskId);
+        await mkdir(resultsPath, { recursive: true });
+        await mkdir(join(resultsPath, "artifacts"), { recursive: true });
+        await mkdir(join(resultsPath, "screenshots"), { recursive: true });
       }
     } catch (error) {
       // Rollback if move failed
       const toExists = await this.folderExists(toPath);
-      if (toExists && sourceExists) {
-        // Both exist, move back
-        await Bun.$`mv ${toPath} ${fromPath}`.catch(() => {});
+      if (toExists && !sourceExists) {
+        // Move succeeded but we're in error state, try to rollback
+        try {
+          await fsRename(toPath, fromPath);
+        } catch {
+          // Rollback failed, log but don't throw
+        }
       }
       throw error;
     }
@@ -91,20 +101,27 @@ export class FolderOrganizer {
    * Get task path for specific status
    */
   getTaskPath(taskId: string, status: TaskStatus): string {
-    return `${this.basePath}/tasks/${status}/${taskId}`;
+    // Validate task ID to prevent path traversal
+    const validatedTaskId = PathValidator.validateTaskId(taskId);
+    return PathValidator.buildPath(this.basePath, "tasks", status, validatedTaskId);
   }
 
   /**
    * Get results path for completed task
    */
   getResultsPath(taskId: string): string {
-    return `${this.basePath}/results/${taskId}`;
+    // Validate task ID to prevent path traversal
+    const validatedTaskId = PathValidator.validateTaskId(taskId);
+    return PathValidator.buildPath(this.basePath, "results", validatedTaskId);
   }
 
   /**
    * Find task path across all status directories
    */
   async findTaskPath(taskId: string): Promise<string | null> {
+    // Validate task ID first
+    const validatedTaskId = PathValidator.validateTaskId(taskId);
+
     const statuses: TaskStatus[] = [
       "open",
       "in-progress",
@@ -114,7 +131,7 @@ export class FolderOrganizer {
     ];
 
     for (const status of statuses) {
-      const path = this.getTaskPath(taskId, status);
+      const path = this.getTaskPath(validatedTaskId, status);
       if (await this.folderExists(path)) {
         return path;
       }
@@ -152,7 +169,7 @@ export class FolderOrganizer {
    * Cleanup old results based on retention policy
    */
   async cleanupResults(retentionDays: number): Promise<number> {
-    const resultsDir = `${this.basePath}/results`;
+    const resultsDir = join(this.basePath, "results");
 
     try {
       const entries = await Array.fromAsync(
@@ -163,8 +180,16 @@ export class FolderOrganizer {
       const cutoffTime = Date.now() - retentionDays * 24 * 3600 * 1000;
 
       for (const entry of entries) {
-        const entryPath = `${resultsDir}/${entry}`;
-        const metricsPath = `${entryPath}/metrics.json`;
+        // Validate entry name to prevent path traversal
+        try {
+          PathValidator.validateTaskId(entry);
+        } catch {
+          // Skip invalid task IDs
+          continue;
+        }
+
+        const entryPath = join(resultsDir, entry);
+        const metricsPath = join(entryPath, "metrics.json");
 
         // Check if metrics file exists and read completion time
         const metricsFile = Bun.file(metricsPath);
@@ -173,7 +198,8 @@ export class FolderOrganizer {
           const completedAt = new Date(metrics.completedAt).getTime();
 
           if (completedAt < cutoffTime) {
-            await Bun.$`rm -rf ${entryPath}`;
+            // Use fs.rm instead of shell command to prevent command injection
+            await rm(entryPath, { recursive: true, force: true });
             removed++;
           }
         }
@@ -190,13 +216,22 @@ export class FolderOrganizer {
    * List all tasks in a status directory
    */
   async listTasksInStatus(status: TaskStatus): Promise<string[]> {
-    const statusDir = `${this.basePath}/tasks/${status}`;
+    const statusDir = join(this.basePath, "tasks", status);
 
     try {
       const entries = await Array.fromAsync(
         new Bun.Glob("*").scan({ cwd: statusDir, onlyFiles: false }),
       );
-      return entries;
+
+      // Validate each entry is a valid task ID
+      return entries.filter((entry) => {
+        try {
+          PathValidator.validateTaskId(entry);
+          return true;
+        } catch {
+          return false;
+        }
+      });
     } catch (error) {
       return [];
     }
@@ -251,13 +286,21 @@ export class FolderOrganizer {
       this.listTasksInStatus("cancelled"),
     ]);
 
-    const resultsDir = `${this.basePath}/results`;
+    const resultsDir = join(this.basePath, "results");
     let totalResults = 0;
     try {
       const results = await Array.fromAsync(
         new Bun.Glob("*").scan({ cwd: resultsDir, onlyFiles: false }),
       );
-      totalResults = results.length;
+      // Only count valid task IDs
+      totalResults = results.filter((entry) => {
+        try {
+          PathValidator.validateTaskId(entry);
+          return true;
+        } catch {
+          return false;
+        }
+      }).length;
     } catch {
       totalResults = 0;
     }

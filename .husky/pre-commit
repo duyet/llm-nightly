@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔍 Running pre-commit checks..."
+
+# Run lint-staged for efficient checking of staged files
+bunx lint-staged
+
+# If lint-staged succeeds, run type checking on the whole project
+if [ $? -eq 0 ]; then
+  echo "✓ Staged files check passed"
+  echo "🔍 Running TypeScript type checking..."
+  bun run typecheck
+
+  if [ $? -eq 0 ]; then
+    echo "✓ Type checking passed"
+  else
+    echo "❌ Type checking failed. Please fix errors before committing."
+    exit 1
+  fi
+else
+  echo "❌ Lint-staged checks failed. Please fix errors before committing."
+  exit 1
+fi
+
+echo "✅ All pre-commit checks passed!"

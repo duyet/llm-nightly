@@ -1,6 +1,7 @@
 /**
  * ErrorRecovery - Error recovery with exponential backoff
  */
+import { logger } from "@/logging/Logger";
 import type { ExecutionError, ExtendedTaskConfig } from "@/types";
 
 export interface RecoveryStrategy {
@@ -262,7 +263,7 @@ export class ErrorRecovery {
       delaySeconds: strategy.delaySeconds,
     };
 
-    console.error("[ErrorRecovery]", JSON.stringify(log, null, 2));
+    logger.error("[ErrorRecovery]", undefined, log);
   }
 
   /**

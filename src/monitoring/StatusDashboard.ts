@@ -62,14 +62,40 @@ export class StatusDashboard {
   private metricsHistory: DashboardMetrics[] = [];
   private maxHistorySize: number = 100;
 
+  // OPTIMIZATION: Caching and debouncing
+  private cachedMetrics: DashboardMetrics | null = null;
+  private cachedHealth: HealthStatus | null = null;
+  private lastMetricsUpdate: number = 0;
+  private lastHealthUpdate: number = 0;
+  private metricsThrottle: number = 1000; // 1 second throttle
+  private healthThrottle: number = 2000; // 2 second throttle
+
   constructor(agent: AutonomousAgent) {
     this.agent = agent;
   }
 
   /**
-   * Get current dashboard metrics
+   * Clear all caches (call when agent state changes significantly)
    */
-  getMetrics(): DashboardMetrics {
+  clearCache(): void {
+    this.cachedMetrics = null;
+    this.cachedHealth = null;
+    this.lastMetricsUpdate = 0;
+    this.lastHealthUpdate = 0;
+  }
+
+  /**
+   * Get current dashboard metrics
+   * OPTIMIZED: Added throttling to prevent excessive recalculation
+   */
+  getMetrics(force: boolean = false): DashboardMetrics {
+    const now = Date.now();
+
+    // Return cached metrics if throttle period hasn't elapsed
+    if (!force && this.cachedMetrics && (now - this.lastMetricsUpdate) < this.metricsThrottle) {
+      return this.cachedMetrics;
+    }
+
     const status = this.agent.getStatus();
     const history = this.agent.getHistory();
 
@@ -150,14 +176,26 @@ export class StatusDashboard {
       this.metricsHistory.shift();
     }
 
+    // OPTIMIZATION: Cache the result
+    this.cachedMetrics = metrics;
+    this.lastMetricsUpdate = now;
+
     return metrics;
   }
 
   /**
    * Get health status
+   * OPTIMIZED: Added throttling and caching
    */
-  getHealthStatus(): HealthStatus {
-    const metrics = this.getMetrics();
+  getHealthStatus(force: boolean = false): HealthStatus {
+    const now = Date.now();
+
+    // Return cached health if throttle period hasn't elapsed
+    if (!force && this.cachedHealth && (now - this.lastHealthUpdate) < this.healthThrottle) {
+      return this.cachedHealth;
+    }
+
+    const metrics = this.getMetrics(force);
     const issues: string[] = [];
     const recommendations: string[] = [];
 
@@ -229,7 +267,7 @@ export class StatusDashboard {
       overall = "healthy";
     }
 
-    return {
+    const healthStatus = {
       overall,
       checks: {
         agentRunning,
@@ -241,6 +279,12 @@ export class StatusDashboard {
       issues,
       recommendations,
     };
+
+    // OPTIMIZATION: Cache the result
+    this.cachedHealth = healthStatus;
+    this.lastHealthUpdate = now;
+
+    return healthStatus;
   }
 
   /**
@@ -407,19 +451,27 @@ export class StatusDashboard {
 
   /**
    * Calculate average task duration
+   * OPTIMIZED: Reduce redundant calculations
    */
   private calculateAvgTaskDuration(history: ExecutionCycle[]): number {
     if (history.length === 0) return 0;
 
-    const totalDuration = history.reduce((sum, cycle) => {
-      const start = new Date(cycle.startTime).getTime();
-      const end = cycle.endTime
-        ? new Date(cycle.endTime).getTime()
-        : Date.now();
-      return sum + (end - start) / 1000 / Math.max(1, cycle.tasksExecuted);
-    }, 0);
+    // OPTIMIZATION: Use more efficient calculation
+    let totalDuration = 0;
+    let validCycles = 0;
 
-    return totalDuration / history.length;
+    for (const cycle of history) {
+      if (cycle.tasksExecuted > 0) {
+        const start = new Date(cycle.startTime).getTime();
+        const end = cycle.endTime
+          ? new Date(cycle.endTime).getTime()
+          : Date.now();
+        totalDuration += (end - start) / 1000 / cycle.tasksExecuted;
+        validCycles++;
+      }
+    }
+
+    return validCycles > 0 ? totalDuration / validCycles : 0;
   }
 
   /**
@@ -480,6 +532,7 @@ export class StatusDashboard {
 
   /**
    * Get recent errors
+   * OPTIMIZED: Early exit when limit reached
    */
   private getRecentErrors(
     history: ExecutionCycle[],
@@ -488,13 +541,14 @@ export class StatusDashboard {
     const errors: Array<{ taskId: string; error: string; timestamp: string }> =
       [];
 
-    for (let i = history.length - 1; i >= 0 && errors.length < limit; i--) {
+    // OPTIMIZATION: Iterate from most recent, exit early
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (errors.length >= limit) break;
+
       const cycle = history[i];
-      for (
-        let j = cycle.errors.length - 1;
-        j >= 0 && errors.length < limit;
-        j--
-      ) {
+      for (let j = cycle.errors.length - 1; j >= 0; j--) {
+        if (errors.length >= limit) break;
+
         errors.push({
           taskId: cycle.errors[j].taskId,
           error: cycle.errors[j].error,

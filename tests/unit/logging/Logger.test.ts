@@ -26,7 +26,7 @@ describe("Logger", () => {
       enableJson: false, // Use text format for easier testing
     });
 
-    storage = new FileStorage();
+    storage = new FileStorage({ baseDir: testBasePath });
   });
 
   afterEach(async () => {
@@ -403,9 +403,10 @@ describe("Logger", () => {
 
   describe("Error Handling", () => {
     test("handles file write errors gracefully", async () => {
+      const invalidPath = path.join(testBasePath, "invalid-subdir");
       const invalidLogger = new Logger({
         level: "debug",
-        basePath: "/invalid/path/that/does/not/exist",
+        basePath: invalidPath,
         enableConsole: false,
         enableFile: true,
       });

@@ -2,6 +2,9 @@
 
 > Autonomous Overnight AI Agent System - Schedule Claude Code tasks and let them run autonomously while you sleep.
 
+[![CI](https://github.com/YOUR_USERNAME/llm-nightly/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/llm-nightly/actions/workflows/ci.yml)
+[![Release](https://github.com/YOUR_USERNAME/llm-nightly/actions/workflows/release.yml/badge.svg)](https://github.com/YOUR_USERNAME/llm-nightly/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/YOUR_USERNAME/llm-nightly/branch/main/graph/badge.svg)](https://codecov.io/gh/YOUR_USERNAME/llm-nightly)
 [![Built with Bun](https://img.shields.io/badge/Built%20with-Bun-black?logo=bun)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

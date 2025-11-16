@@ -75,7 +75,7 @@ export class ReportGenerator {
     this.basePath = basePath;
     this.metricsCollector = new MetricsCollector(basePath);
     this.loader = new TaskLoader(basePath);
-    this.storage = new FileStorage();
+    this.storage = new FileStorage({ baseDir: basePath });
   }
 
   /**

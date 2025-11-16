@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+*.log
+.env
+.env.*
+!.env.example
+bun.lockb
+.husky
+CLAUDE.md
+*.md

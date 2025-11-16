@@ -40,9 +40,16 @@ export class MemoryManager {
   private storage: FileStorage;
   private basePath: string;
 
+  // OPTIMIZATION: In-memory cache with limits
+  private learningCache: Map<string, LearningEntry[]> = new Map();
+  private newsCache: NewsItem[] | null = null;
+  private cacheExpiry: Map<string, number> = new Map();
+  private cacheTTL: number = 60000; // 1 minute
+  private maxNewsInMemory: number = 100;
+
   constructor(basePath: string) {
     this.basePath = basePath;
-    this.storage = new FileStorage();
+    this.storage = new FileStorage({ baseDir: basePath });
   }
 
   /**
@@ -91,6 +98,7 @@ export class MemoryManager {
 
   /**
    * Add learning entry
+   * OPTIMIZED: Invalidate cache on write
    */
   async addLearning(
     learning: Omit<LearningEntry, "id" | "timestamp">,
@@ -110,17 +118,36 @@ export class MemoryManager {
 
     // Save updated learnings
     await this.storage.writeJSON(learningPath, learnings);
+
+    // OPTIMIZATION: Invalidate cache
+    this.learningCache.delete(entry.category);
+    this.cacheExpiry.delete(`learning-${entry.category}`);
   }
 
   /**
    * Get learnings by category
+   * OPTIMIZED: Added caching and parallel loading for all categories
    */
   async getLearnings(
     category?: LearningEntry["category"],
   ): Promise<LearningEntry[]> {
     if (category) {
+      // Check cache first
+      const cacheKey = `learning-${category}`;
+      const expiry = this.cacheExpiry.get(cacheKey);
+
+      if (this.learningCache.has(category) && expiry && expiry > Date.now()) {
+        return this.learningCache.get(category)!;
+      }
+
       const path = `${this.basePath}/memory/learning/${category}.json`;
-      return (await this.storage.readJSON<LearningEntry[]>(path)) || [];
+      const learnings = (await this.storage.readJSON<LearningEntry[]>(path)) || [];
+
+      // Cache the result
+      this.learningCache.set(category, learnings);
+      this.cacheExpiry.set(cacheKey, Date.now() + this.cacheTTL);
+
+      return learnings;
     }
 
     // Get all categories
@@ -131,17 +158,17 @@ export class MemoryManager {
       "pattern",
     ];
 
-    const allLearnings: LearningEntry[] = [];
-    for (const cat of categories) {
-      const learnings = await this.getLearnings(cat);
-      allLearnings.push(...learnings);
-    }
+    // OPTIMIZATION: Load all categories in parallel
+    const allLearningsArrays = await Promise.all(
+      categories.map(cat => this.getLearnings(cat))
+    );
 
-    return allLearnings;
+    return allLearningsArrays.flat();
   }
 
   /**
    * Store news item with deduplication
+   * OPTIMIZED: Invalidate cache on write
    */
   async storeNewsItem(
     item: Omit<NewsItem, "id" | "fetchedAt" | "contentHash">,
@@ -170,15 +197,36 @@ export class MemoryManager {
     // Save updated news
     await this.storage.writeJSON(newsPath, news);
 
+    // OPTIMIZATION: Invalidate cache
+    this.newsCache = null;
+    this.cacheExpiry.delete('news-all');
+
     return true; // New item
   }
 
   /**
    * Get recent news (last N days based on publish date)
+   * OPTIMIZED: Added caching and lazy loading
    */
   async getRecentNews(days: number = 7): Promise<NewsItem[]> {
-    const newsPath = `${this.basePath}/memory/news-cache/news.json`;
-    const allNews = (await this.storage.readJSON<NewsItem[]>(newsPath)) || [];
+    // Check cache first
+    const cacheKey = 'news-all';
+    const expiry = this.cacheExpiry.get(cacheKey);
+
+    let allNews: NewsItem[];
+
+    if (this.newsCache && expiry && expiry > Date.now()) {
+      allNews = this.newsCache;
+    } else {
+      const newsPath = `${this.basePath}/memory/news-cache/news.json`;
+      allNews = (await this.storage.readJSON<NewsItem[]>(newsPath)) || [];
+
+      // Cache with limit
+      if (allNews.length <= this.maxNewsInMemory) {
+        this.newsCache = allNews;
+        this.cacheExpiry.set(cacheKey, Date.now() + this.cacheTTL);
+      }
+    }
 
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
@@ -245,14 +293,19 @@ export class MemoryManager {
 
   /**
    * Get context for autonomous decision making
+   * OPTIMIZED: Parallel loading of learnings and news
    */
   async getContext(taskId?: string): Promise<string> {
-    const learnings = await this.getLearnings();
-    const recentNews = await this.getRecentNews(7);
+    // OPTIMIZATION: Load learnings and news in parallel
+    const [learnings, recentNews, history] = await Promise.all([
+      this.getLearnings(),
+      this.getRecentNews(7),
+      taskId ? this.getExecutionHistory(taskId) : Promise.resolve([]),
+    ]);
 
     let context = "# System Context\n\n";
 
-    // Add learning insights
+    // Add learning insights (limit to most recent 10)
     if (learnings.length > 0) {
       context += "## Recent Learnings\n\n";
       learnings.slice(-10).forEach((learning) => {
@@ -262,19 +315,16 @@ export class MemoryManager {
     }
 
     // Add relevant task history if taskId provided
-    if (taskId) {
-      const history = await this.getExecutionHistory(taskId);
-      if (history.length > 0) {
-        context += `## Task History (${taskId})\n\n`;
-        history.forEach((record) => {
-          const status = record.result.success ? "✅ Success" : "❌ Failed";
-          context += `- ${status} at ${record.timestamp}\n`;
-          if (record.result.error) {
-            context += `  Error: ${record.result.error.message}\n`;
-          }
-        });
-        context += "\n";
-      }
+    if (taskId && history.length > 0) {
+      context += `## Task History (${taskId})\n\n`;
+      history.forEach((record) => {
+        const status = record.result.success ? "✅ Success" : "❌ Failed";
+        context += `- ${status} at ${record.timestamp}\n`;
+        if (record.result.error) {
+          context += `  Error: ${record.result.error.message}\n`;
+        }
+      });
+      context += "\n";
     }
 
     return context;
@@ -282,6 +332,7 @@ export class MemoryManager {
 
   /**
    * Clean old news (older than N days based on publish date)
+   * OPTIMIZED: Invalidate cache after cleanup
    */
   async cleanOldNews(days: number = 30): Promise<number> {
     const newsPath = `${this.basePath}/memory/news-cache/news.json`;
@@ -297,8 +348,21 @@ export class MemoryManager {
 
     if (removed > 0) {
       await this.storage.writeJSON(newsPath, filtered);
+
+      // OPTIMIZATION: Invalidate cache
+      this.newsCache = null;
+      this.cacheExpiry.delete('news-all');
     }
 
     return removed;
+  }
+
+  /**
+   * Clear all caches
+   */
+  clearCache(): void {
+    this.learningCache.clear();
+    this.newsCache = null;
+    this.cacheExpiry.clear();
   }
 }

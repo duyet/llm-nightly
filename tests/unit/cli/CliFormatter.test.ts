@@ -4,7 +4,7 @@
 import { describe, test, expect } from "bun:test";
 import { CliFormatter } from "@/cli/CliFormatter";
 import type { Task, TaskStatus } from "@/types";
-import type { HealthCheckResult } from "@/monitoring/HealthCheck";
+import type { SystemHealth } from "@/monitoring/HealthCheck";
 
 describe("CliFormatter", () => {
   describe("Message Formatting", () => {
@@ -118,12 +118,19 @@ describe("CliFormatter", () => {
 
   describe("Health Check Formatting", () => {
     test("formats healthy status", () => {
-      const health: HealthCheckResult = {
+      const health: SystemHealth = {
         overall: "healthy",
+        timestamp: new Date().toISOString(),
         checks: [
-          { name: "Storage", status: "pass", message: "All good" },
-          { name: "Claude", status: "pass", message: "Available" },
+          { name: "Storage", status: "pass", message: "All good", timestamp: new Date().toISOString(), duration: 10 },
+          { name: "Claude", status: "pass", message: "Available", timestamp: new Date().toISOString(), duration: 20 },
         ],
+        summary: {
+          passed: 2,
+          failed: 0,
+          warnings: 0,
+          total: 2,
+        },
         recommendations: [],
       };
 
@@ -135,12 +142,19 @@ describe("CliFormatter", () => {
     });
 
     test("formats degraded status with recommendations", () => {
-      const health: HealthCheckResult = {
+      const health: SystemHealth = {
         overall: "degraded",
+        timestamp: new Date().toISOString(),
         checks: [
-          { name: "Storage", status: "pass", message: "OK" },
-          { name: "Claude", status: "fail", message: "Slow response" },
+          { name: "Storage", status: "pass", message: "OK", timestamp: new Date().toISOString(), duration: 15 },
+          { name: "Claude", status: "fail", message: "Slow response", timestamp: new Date().toISOString(), duration: 100 },
         ],
+        summary: {
+          passed: 1,
+          failed: 1,
+          warnings: 0,
+          total: 2,
+        },
         recommendations: ["Check API key", "Retry later"],
       };
 

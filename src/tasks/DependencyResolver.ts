@@ -23,15 +23,37 @@ export class DependencyResolver {
   private loader: TaskLoader;
   private metadataManager: MetadataManager;
 
+  // OPTIMIZATION: Memoization caches for expensive operations
+  private depthCache: Map<string, number> = new Map();
+  private chainCache: Map<string, string[]> = new Map();
+  private statusCache: Map<string, { data: DependencyStatus; expiry: number }> = new Map();
+  private cacheTTL: number = 30000; // 30 second cache TTL
+
   constructor(basePath: string) {
     this.loader = new TaskLoader(basePath);
     this.metadataManager = new MetadataManager(basePath);
   }
 
   /**
+   * Clear all caches (call when tasks are modified)
+   */
+  clearCache(): void {
+    this.depthCache.clear();
+    this.chainCache.clear();
+    this.statusCache.clear();
+  }
+
+  /**
    * Check if task dependencies are satisfied
+   * OPTIMIZED: Added caching and parallel dependency loading
    */
   async checkDependencies(taskId: string): Promise<DependencyStatus> {
+    // Check cache first
+    const cached = this.statusCache.get(taskId);
+    if (cached && cached.expiry > Date.now()) {
+      return cached.data;
+    }
+
     const loadResult = await this.loader.loadTask(taskId, {
       validateOnLoad: false,
     });
@@ -48,43 +70,70 @@ export class DependencyResolver {
     const dependencies = loadResult.task.config.dependencies;
 
     if (dependencies.length === 0) {
-      return {
+      const result = {
         taskId,
         satisfied: true,
         missing: [],
         blocking: [],
       };
+      this.cacheStatus(taskId, result);
+      return result;
     }
 
     const missing: string[] = [];
     const blocking: string[] = [];
 
-    for (const depId of dependencies) {
-      const depLoadResult = await this.loader.loadTask(depId, {
-        validateOnLoad: false,
-      });
+    // OPTIMIZATION: Load all dependencies in parallel
+    const depResults = await Promise.all(
+      dependencies.map(depId =>
+        this.loader.loadTask(depId, { validateOnLoad: false })
+      )
+    );
+
+    dependencies.forEach((depId, index) => {
+      const depLoadResult = depResults[index];
 
       if (!depLoadResult.task) {
         missing.push(depId);
-        continue;
-      }
-
-      // Dependency must be completed
-      if (depLoadResult.task.status !== "done") {
+      } else if (depLoadResult.task.status !== "done") {
         blocking.push(depId);
       }
-    }
+    });
 
-    return {
+    const result = {
       taskId,
       satisfied: missing.length === 0 && blocking.length === 0,
       missing,
       blocking,
     };
+
+    this.cacheStatus(taskId, result);
+    return result;
+  }
+
+  /**
+   * Cache dependency status
+   */
+  private cacheStatus(taskId: string, status: DependencyStatus): void {
+    this.statusCache.set(taskId, {
+      data: status,
+      expiry: Date.now() + this.cacheTTL,
+    });
+
+    // Clean old cache entries
+    if (this.statusCache.size > 100) {
+      const now = Date.now();
+      for (const [key, value] of this.statusCache.entries()) {
+        if (value.expiry < now) {
+          this.statusCache.delete(key);
+        }
+      }
+    }
   }
 
   /**
    * Resolve task execution order based on dependencies
+   * OPTIMIZED: Parallel dependency loading
    */
   async resolveDependencies(taskId: string): Promise<ResolutionResult> {
     const status = await this.checkDependencies(taskId);
@@ -112,16 +161,17 @@ export class DependencyResolver {
       };
     }
 
-    const readyDeps: string[] = [];
-    for (const depId of loadResult.task.config.dependencies) {
-      const depLoadResult = await this.loader.loadTask(depId, {
-        validateOnLoad: false,
-      });
+    // OPTIMIZATION: Load all dependencies in parallel
+    const depResults = await Promise.all(
+      loadResult.task.config.dependencies.map(depId =>
+        this.loader.loadTask(depId, { validateOnLoad: false })
+      )
+    );
 
-      if (depLoadResult.task && depLoadResult.task.status === "done") {
-        readyDeps.push(depId);
-      }
-    }
+    const readyDeps = loadResult.task.config.dependencies.filter((depId, index) => {
+      const depLoadResult = depResults[index];
+      return depLoadResult.task && depLoadResult.task.status === "done";
+    });
 
     return {
       canExecute: true,
@@ -144,11 +194,17 @@ export class DependencyResolver {
 
   /**
    * Get dependency chain for a task (recursive)
+   * OPTIMIZED: Memoization to avoid recalculating chains
    */
   async getDependencyChain(
     taskId: string,
     visited = new Set<string>(),
   ): Promise<string[]> {
+    // Check cache first (only for root calls)
+    if (visited.size === 0 && this.chainCache.has(taskId)) {
+      return this.chainCache.get(taskId)!;
+    }
+
     // Prevent infinite loops
     if (visited.has(taskId)) {
       return [];
@@ -166,9 +222,18 @@ export class DependencyResolver {
 
     const chain: string[] = [taskId];
 
-    for (const depId of loadResult.task.config.dependencies) {
-      const depChain = await this.getDependencyChain(depId, visited);
-      chain.push(...depChain);
+    // OPTIMIZATION: Load all dependency chains in parallel
+    const depChains = await Promise.all(
+      loadResult.task.config.dependencies.map(depId =>
+        this.getDependencyChain(depId, visited)
+      )
+    );
+
+    depChains.forEach(depChain => chain.push(...depChain));
+
+    // Cache result for root calls
+    if (visited.size === 1) {
+      this.chainCache.set(taskId, chain);
     }
 
     return chain;
@@ -194,65 +259,71 @@ export class DependencyResolver {
 
   /**
    * Find all executable tasks (no unsatisfied dependencies)
+   * OPTIMIZED: Parallel dependency checking for all tasks
    */
   async findExecutableTasks(status: TaskStatus = "open"): Promise<Task[]> {
     const tasks = await this.loader.loadTasksByStatus(status, {
       validateOnLoad: false,
     });
 
-    const executable: Task[] = [];
+    // OPTIMIZATION: Check all dependencies in parallel
+    const depStatuses = await Promise.all(
+      tasks.map(task => this.checkDependencies(task.config.id))
+    );
 
-    for (const task of tasks) {
-      const depStatus = await this.checkDependencies(task.config.id);
-      if (depStatus.satisfied) {
-        executable.push(task);
-      }
-    }
-
-    return executable;
+    return tasks.filter((_, index) => depStatuses[index].satisfied);
   }
 
   /**
    * Calculate dependency depth (how many levels of dependencies)
+   * OPTIMIZED: Memoization and parallel depth calculation
    */
   async calculateDependencyDepth(taskId: string): Promise<number> {
+    // Check cache first
+    if (this.depthCache.has(taskId)) {
+      return this.depthCache.get(taskId)!;
+    }
+
     const loadResult = await this.loader.loadTask(taskId, {
       validateOnLoad: false,
     });
 
     if (!loadResult.task || loadResult.task.config.dependencies.length === 0) {
+      this.depthCache.set(taskId, 0);
       return 0;
     }
 
-    let maxDepth = 0;
+    // OPTIMIZATION: Calculate all dependency depths in parallel
+    const depths = await Promise.all(
+      loadResult.task.config.dependencies.map(depId =>
+        this.calculateDependencyDepth(depId)
+      )
+    );
 
-    for (const depId of loadResult.task.config.dependencies) {
-      const depDepth = await this.calculateDependencyDepth(depId);
-      maxDepth = Math.max(maxDepth, depDepth + 1);
-    }
+    const maxDepth = Math.max(...depths) + 1;
+    this.depthCache.set(taskId, maxDepth);
 
     return maxDepth;
   }
 
   /**
    * Get tasks at a specific dependency level
+   * OPTIMIZED: Parallel depth calculation for all tasks
    */
   async getTasksByDepth(depth: number): Promise<Task[]> {
     const allTasks = await this.loader.loadAllTasks({ validateOnLoad: false });
-    const tasksAtDepth: Task[] = [];
 
-    for (const task of allTasks) {
-      const taskDepth = await this.calculateDependencyDepth(task.config.id);
-      if (taskDepth === depth) {
-        tasksAtDepth.push(task);
-      }
-    }
+    // OPTIMIZATION: Calculate all depths in parallel
+    const depths = await Promise.all(
+      allTasks.map(task => this.calculateDependencyDepth(task.config.id))
+    );
 
-    return tasksAtDepth;
+    return allTasks.filter((_, index) => depths[index] === depth);
   }
 
   /**
    * Verify dependency consistency (all dependencies exist)
+   * OPTIMIZED: Parallel existence checks
    */
   async verifyDependencies(taskId: string): Promise<{
     valid: boolean;
@@ -266,14 +337,17 @@ export class DependencyResolver {
       return { valid: false, invalidDependencies: [] };
     }
 
-    const invalid: string[] = [];
+    // OPTIMIZATION: Check all dependencies in parallel
+    const existenceResults = await Promise.all(
+      loadResult.task.config.dependencies.map(async depId => ({
+        depId,
+        exists: await this.loader.taskExists(depId),
+      }))
+    );
 
-    for (const depId of loadResult.task.config.dependencies) {
-      const exists = await this.loader.taskExists(depId);
-      if (!exists) {
-        invalid.push(depId);
-      }
-    }
+    const invalid = existenceResults
+      .filter(result => !result.exists)
+      .map(result => result.depId);
 
     return {
       valid: invalid.length === 0,
@@ -283,6 +357,7 @@ export class DependencyResolver {
 
   /**
    * Get dependency tree statistics
+   * OPTIMIZED: Parallel loading and calculation
    */
   async getDependencyStats(taskId: string): Promise<{
     totalDependencies: number;
@@ -306,23 +381,28 @@ export class DependencyResolver {
     }
 
     const directDeps = loadResult.task.config.dependencies;
-    const chain = await this.getDependencyChain(taskId);
-    const depth = await this.calculateDependencyDepth(taskId);
+
+    // OPTIMIZATION: Load all data in parallel
+    const [chain, depth, depResults] = await Promise.all([
+      this.getDependencyChain(taskId),
+      this.calculateDependencyDepth(taskId),
+      Promise.all(
+        directDeps.map(depId =>
+          this.loader.loadTask(depId, { validateOnLoad: false })
+        )
+      ),
+    ]);
 
     let satisfiedCount = 0;
     let unsatisfiedCount = 0;
 
-    for (const depId of directDeps) {
-      const depLoadResult = await this.loader.loadTask(depId, {
-        validateOnLoad: false,
-      });
-
+    depResults.forEach(depLoadResult => {
       if (depLoadResult.task && depLoadResult.task.status === "done") {
         satisfiedCount++;
       } else {
         unsatisfiedCount++;
       }
-    }
+    });
 
     return {
       totalDependencies: chain.length - 1, // Exclude task itself

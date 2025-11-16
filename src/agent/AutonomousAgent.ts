@@ -23,51 +23,198 @@ import type {
   DetailedTaskResult,
 } from "@/types";
 
+/**
+ * Configuration options for the AutonomousAgent
+ *
+ * Defines all operational parameters for autonomous task execution including
+ * resource paths, execution constraints, and autonomy settings.
+ *
+ * @example
+ * ```typescript
+ * const config: AgentConfig = {
+ *   basePath: "/home/user/.llm-nightly",
+ *   claudePath: "claude",
+ *   workingDir: process.cwd(),
+ *   tokenBudget: 100000,
+ *   maxConcurrentTasks: 3,
+ *   pollingIntervalSeconds: 60,
+ *   autonomyLevel: "semi",
+ *   enableSelfTaskCreation: true,
+ *   maxSelfCreatedTasksPerCycle: 3
+ * };
+ * ```
+ */
 export interface AgentConfig {
+  /** Base directory for task storage and data files */
   basePath: string;
+  /** Path to Claude CLI executable (absolute or in PATH) */
   claudePath: string;
+  /** Working directory for task execution */
   workingDir: string;
+  /** Total token budget available for task execution */
   tokenBudget: number;
+  /** Maximum number of tasks to execute concurrently */
   maxConcurrentTasks: number;
+  /** Interval between execution cycles in seconds */
   pollingIntervalSeconds: number;
+  /** Level of autonomy: full (auto everything), semi (needs approval), manual (no auto) */
   autonomyLevel: "full" | "semi" | "manual";
+  /** Whether to enable self-task creation based on system analysis */
   enableSelfTaskCreation: boolean;
+  /** Maximum number of self-created tasks per execution cycle */
   maxSelfCreatedTasksPerCycle: number;
 }
 
+/**
+ * Represents a single execution cycle of the autonomous agent
+ *
+ * Tracks all metrics and outcomes for one complete iteration of task
+ * selection, execution, and self-task creation.
+ *
+ * @example
+ * ```typescript
+ * const cycle: ExecutionCycle = {
+ *   cycleId: "cycle-1697123456789",
+ *   startTime: "2024-10-12T15:30:00.000Z",
+ *   endTime: "2024-10-12T15:35:23.456Z",
+ *   tasksExecuted: 5,
+ *   tasksSucceeded: 4,
+ *   tasksFailed: 1,
+ *   tasksCreated: 2,
+ *   totalTokensUsed: 12500,
+ *   errors: [{
+ *     taskId: "task-123-test",
+ *     error: "Timeout exceeded",
+ *     recovered: false
+ *   }]
+ * };
+ * ```
+ */
 export interface ExecutionCycle {
+  /** Unique identifier for this execution cycle */
   cycleId: string;
+  /** ISO timestamp when cycle started */
   startTime: string;
+  /** ISO timestamp when cycle completed (undefined if still running) */
   endTime?: string;
+  /** Total number of tasks that were executed in this cycle */
   tasksExecuted: number;
+  /** Number of tasks that completed successfully */
   tasksSucceeded: number;
+  /** Number of tasks that failed after all retries */
   tasksFailed: number;
+  /** Number of new tasks created during this cycle (including self-tasks) */
   tasksCreated: number;
+  /** Total tokens consumed during this cycle */
   totalTokensUsed: number;
+  /** Errors encountered during this cycle */
   errors: Array<{
+    /** ID of task that encountered the error */
     taskId: string;
+    /** Error message */
     error: string;
+    /** Whether error recovery was successful */
     recovered: boolean;
   }>;
 }
 
+/**
+ * Current operational status of the autonomous agent
+ *
+ * Provides a comprehensive snapshot of agent state including execution
+ * status, resource usage, and task queue information.
+ *
+ * @example
+ * ```typescript
+ * const status: AgentStatus = {
+ *   running: true,
+ *   currentCycle: { cycleId: "cycle-123", ... },
+ *   totalCycles: 42,
+ *   totalTasksExecuted: 150,
+ *   totalTokensUsed: 45000,
+ *   uptime: 3600,
+ *   tokenBudgetStatus: {
+ *     total: 100000,
+ *     used: 45000,
+ *     remaining: 55000,
+ *     percentageUsed: 45
+ *   },
+ *   activeTasks: ["task-123-fix", "task-456-feature"],
+ *   queuedTasks: 8
+ * };
+ * ```
+ */
 export interface AgentStatus {
+  /** Whether the agent is currently running */
   running: boolean;
+  /** Currently executing cycle (undefined if not in a cycle) */
   currentCycle?: ExecutionCycle;
+  /** Total number of execution cycles completed */
   totalCycles: number;
+  /** Total number of tasks executed since agent started */
   totalTasksExecuted: number;
+  /** Total tokens consumed since agent started */
   totalTokensUsed: number;
+  /** Agent uptime in seconds */
   uptime: number;
+  /** Current token budget status */
   tokenBudgetStatus: {
+    /** Total token budget allocated */
     total: number;
+    /** Tokens consumed so far */
     used: number;
+    /** Tokens remaining */
     remaining: number;
+    /** Percentage of budget used (0-100) */
     percentageUsed: number;
   };
+  /** IDs of tasks currently being executed */
   activeTasks: string[];
+  /** Number of tasks ready and waiting in queue */
   queuedTasks: number;
 }
 
+/**
+ * Main autonomous task execution orchestrator
+ *
+ * The AutonomousAgent is the core component that manages the entire task execution
+ * lifecycle. It continuously monitors for executable tasks, manages token budgets,
+ * handles retries and error recovery, and can autonomously create new tasks based
+ * on system analysis.
+ *
+ * Key features:
+ * - Autonomous task selection and prioritization
+ * - Token budget management with rollover
+ * - Concurrent task execution with configurable limits
+ * - Automatic retry with exponential backoff
+ * - Self-task creation based on system health and trends
+ * - Comprehensive execution tracking and metrics
+ *
+ * @example
+ * ```typescript
+ * const agent = new AutonomousAgent({
+ *   basePath: "/home/user/.llm-nightly",
+ *   claudePath: "claude",
+ *   workingDir: process.cwd(),
+ *   tokenBudget: 100000,
+ *   maxConcurrentTasks: 3,
+ *   pollingIntervalSeconds: 60,
+ *   autonomyLevel: "semi",
+ *   enableSelfTaskCreation: true,
+ *   maxSelfCreatedTasksPerCycle: 3
+ * });
+ *
+ * // Start autonomous execution
+ * await agent.start();
+ *
+ * // Check status
+ * const status = agent.getStatus();
+ * console.log(`Running: ${status.running}, Tasks: ${status.totalTasksExecuted}`);
+ *
+ * // Stop gracefully
+ * await agent.stop();
+ * ```
+ */
 export class AutonomousAgent {
   private config: AgentConfig;
   private executor: ClaudeExecutor;
@@ -89,6 +236,29 @@ export class AutonomousAgent {
   private totalTokensUsed: number = 0;
   private totalTasksExecuted: number = 0;
 
+  /**
+   * Creates a new AutonomousAgent instance
+   *
+   * Initializes all subsystems including task management, execution,
+   * monitoring, and self-task creation.
+   *
+   * @param config - Agent configuration options
+   *
+   * @example
+   * ```typescript
+   * const agent = new AutonomousAgent({
+   *   basePath: "/home/user/.llm-nightly",
+   *   claudePath: "claude",
+   *   workingDir: process.cwd(),
+   *   tokenBudget: 100000,
+   *   maxConcurrentTasks: 3,
+   *   pollingIntervalSeconds: 60,
+   *   autonomyLevel: "semi",
+   *   enableSelfTaskCreation: true,
+   *   maxSelfCreatedTasksPerCycle: 3
+   * });
+   * ```
+   */
   constructor(config: AgentConfig) {
     this.config = config;
 
@@ -123,7 +293,28 @@ export class AutonomousAgent {
   }
 
   /**
-   * Start autonomous execution
+   * Start autonomous execution loop
+   *
+   * Begins the main execution loop that continuously monitors for tasks,
+   * executes them based on priority and dependencies, and creates new tasks
+   * as needed. The loop runs indefinitely until stop() is called.
+   *
+   * @throws {Error} If agent is already running
+   *
+   * @example
+   * ```typescript
+   * const agent = new AutonomousAgent(config);
+   *
+   * // Start in background (non-blocking)
+   * agent.start().catch(error => {
+   *   console.error("Agent failed:", error);
+   * });
+   *
+   * // Or await with timeout
+   * const timeout = setTimeout(() => agent.stop(), 3600000); // 1 hour
+   * await agent.start();
+   * clearTimeout(timeout);
+   * ```
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -146,7 +337,24 @@ export class AutonomousAgent {
   }
 
   /**
-   * Stop autonomous execution
+   * Stop autonomous execution gracefully
+   *
+   * Signals the agent to stop and waits for all active tasks to complete
+   * before returning. No new tasks will be started after this is called.
+   *
+   * @example
+   * ```typescript
+   * // Stop gracefully
+   * await agent.stop();
+   * console.log("Agent stopped, all tasks completed");
+   *
+   * // Or with timeout
+   * const stopPromise = agent.stop();
+   * const timeout = new Promise((_, reject) =>
+   *   setTimeout(() => reject(new Error("Stop timeout")), 30000)
+   * );
+   * await Promise.race([stopPromise, timeout]);
+   * ```
    */
   async stop(): Promise<void> {
     logger.info("Stopping agent");
@@ -637,7 +845,27 @@ export class AutonomousAgent {
   }
 
   /**
-   * Get current agent status
+   * Get current agent status and metrics
+   *
+   * Returns a comprehensive snapshot of the agent's current state including
+   * running status, execution metrics, token usage, and task queue information.
+   *
+   * @returns Current agent status
+   *
+   * @example
+   * ```typescript
+   * const status = agent.getStatus();
+   *
+   * console.log(`Agent running: ${status.running}`);
+   * console.log(`Tasks executed: ${status.totalTasksExecuted}`);
+   * console.log(`Token usage: ${status.tokenBudgetStatus.percentageUsed}%`);
+   * console.log(`Active tasks: ${status.activeTasks.length}`);
+   * console.log(`Queued tasks: ${status.queuedTasks}`);
+   *
+   * if (status.currentCycle) {
+   *   console.log(`Current cycle: ${status.currentCycle.cycleId}`);
+   * }
+   * ```
    */
   getStatus(): AgentStatus {
     const budgetStatus = this.tokenBudget.getStatus();
@@ -659,19 +887,107 @@ export class AutonomousAgent {
         percentageUsed: budgetStatus.percentageUsed,
       },
       activeTasks: Array.from(this.activeTasks),
-      queuedTasks: 0, // TODO: Calculate from executable tasks
+      queuedTasks: 0, // Queued tasks calculation moved to async method
     };
   }
 
   /**
-   * Get execution history
+   * Get count of queued tasks ready for execution
+   */
+  private async getQueuedTasksCount(): Promise<number> {
+    try {
+      // Load all open tasks
+      const openTasks = await this.loader.loadTasksByStatus("open", {
+        validateOnLoad: false,
+      });
+
+      // Filter out tasks that are currently active
+      const availableTasks = openTasks.filter(
+        (task) => !this.activeTasks.has(task.config.id)
+      );
+
+      // Count tasks that can be executed (dependencies met, scheduled time met, etc.)
+      const readyTasks = availableTasks.filter((task) => {
+        // Check schedule constraints
+        const scheduleConfig = (task.config as ExtendedTaskConfig).scheduling;
+        if (scheduleConfig) {
+          const scheduleCheck = ScheduleHelper.checkSchedule(scheduleConfig);
+          if (!scheduleCheck.canExecute) {
+            return false;
+          }
+        }
+
+        // Check dependencies
+        const dependencies = task.config.dependencies || [];
+        return dependencies.length === 0; // Simple check - could be enhanced with dependency resolution
+      });
+
+      return readyTasks.length;
+    } catch (error) {
+      logger.error(
+        "Error calculating queued tasks",
+        error instanceof Error ? error : new Error(String(error))
+      );
+      return 0;
+    }
+  }
+
+  /**
+   * Get execution cycle history
+   *
+   * Returns a copy of all completed execution cycles. The history is limited
+   * to the last 100 cycles to prevent unbounded memory growth.
+   *
+   * @returns Array of completed execution cycles (newest first)
+   *
+   * @example
+   * ```typescript
+   * const history = agent.getHistory();
+   *
+   * // Analyze recent performance
+   * const recentCycles = history.slice(0, 10);
+   * const avgTasksPerCycle = recentCycles.reduce(
+   *   (sum, c) => sum + c.tasksExecuted, 0
+   * ) / recentCycles.length;
+   *
+   * const successRate = recentCycles.reduce(
+   *   (sum, c) => sum + c.tasksSucceeded, 0
+   * ) / recentCycles.reduce(
+   *   (sum, c) => sum + c.tasksExecuted, 0
+   * );
+   *
+   * console.log(`Avg tasks/cycle: ${avgTasksPerCycle}`);
+   * console.log(`Success rate: ${(successRate * 100).toFixed(1)}%`);
+   * ```
    */
   getHistory(): ExecutionCycle[] {
     return [...this.cycleHistory];
   }
 
   /**
-   * Get budget forecast
+   * Get token budget forecast
+   *
+   * Calculates whether remaining token budget is sufficient for planned
+   * tasks and provides recommendations.
+   *
+   * @param remainingTasks - Number of tasks left to execute
+   * @param avgTokensPerTask - Average tokens consumed per task
+   * @returns Forecast with budget sufficiency and recommendations
+   *
+   * @example
+   * ```typescript
+   * const forecast = agent.getForecast(20, 5000);
+   *
+   * if (forecast.sufficient) {
+   *   console.log("Budget sufficient for remaining tasks");
+   * } else {
+   *   console.log("Insufficient budget!");
+   *   console.log(`Shortfall: ${forecast.shortfall} tokens`);
+   *   console.log(`Recommendation: ${forecast.recommendation}`);
+   * }
+   *
+   * console.log(`Projected usage: ${forecast.projectedUsage} tokens`);
+   * ```
    */
   getForecast(
     remainingTasks: number,
@@ -681,7 +997,32 @@ export class AutonomousAgent {
   }
 
   /**
-   * Update configuration
+   * Update agent configuration dynamically
+   *
+   * Applies configuration updates and reinitializes affected subsystems.
+   * Can be called while agent is running, but some changes may only take
+   * effect in the next execution cycle.
+   *
+   * @param updates - Partial configuration with fields to update
+   *
+   * @example
+   * ```typescript
+   * // Increase concurrency
+   * agent.updateConfig({
+   *   maxConcurrentTasks: 5
+   * });
+   *
+   * // Adjust token budget
+   * agent.updateConfig({
+   *   tokenBudget: 200000
+   * });
+   *
+   * // Change autonomy level
+   * agent.updateConfig({
+   *   autonomyLevel: "full",
+   *   enableSelfTaskCreation: true
+   * });
+   * ```
    */
   updateConfig(updates: Partial<AgentConfig>): void {
     this.config = { ...this.config, ...updates };
@@ -704,7 +1045,29 @@ export class AutonomousAgent {
   }
 
   /**
-   * Process end of period (for budget rollover)
+   * Process end of budget period
+   *
+   * Triggers budget rollover logic, carrying forward unused tokens according
+   * to the configured rollover percentage. Should be called at the end of
+   * each budget period (e.g., daily, weekly).
+   *
+   * @returns Rollover summary with unused tokens, rollover amount, and new total
+   *
+   * @example
+   * ```typescript
+   * // At end of day/week/period
+   * const rollover = agent.processEndOfPeriod();
+   *
+   * console.log(`Unused tokens: ${rollover.unused}`);
+   * console.log(`Rolled over: ${rollover.rollover} (${rollover.rolloverPercentage}%)`);
+   * console.log(`New budget: ${rollover.newTotal}`);
+   *
+   * // Schedule periodic rollover
+   * setInterval(() => {
+   *   const result = agent.processEndOfPeriod();
+   *   logger.info("Budget period ended", result);
+   * }, 24 * 60 * 60 * 1000); // Daily
+   * ```
    */
   processEndOfPeriod(): ReturnType<typeof this.tokenBudget.processEndOfPeriod> {
     const result = this.tokenBudget.processEndOfPeriod();

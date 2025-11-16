@@ -11,26 +11,27 @@ import { ConfigManager } from "./config/Config";
 import { StatusDashboard } from "./monitoring/StatusDashboard";
 import { HealthCheck } from "./monitoring/HealthCheck";
 import { ReportGenerator } from "./reporting/ReportGenerator";
+import { logger } from "./logging/Logger";
 
 async function main() {
-  console.log("╔════════════════════════════════════════════════╗");
-  console.log("║         LLM Nightly v1.0.0                     ║");
-  console.log("║    Autonomous Overnight AI Scheduler          ║");
-  console.log("╚════════════════════════════════════════════════╝");
-  console.log("");
+  logger.info("╔════════════════════════════════════════════════╗");
+  logger.info("║         LLM Nightly v1.0.0                     ║");
+  logger.info("║    Autonomous Overnight AI Scheduler          ║");
+  logger.info("╚════════════════════════════════════════════════╝");
+  logger.info("");
 
   // Load configuration
   const configManager = new ConfigManager();
   const config = await configManager.load();
 
-  console.log(`📁 Base Path: ${config.basePath}`);
-  console.log(`⚙️  Working Directory: ${config.workingDir}`);
-  console.log(`🤖 Autonomy Level: ${config.agent.autonomyLevel}`);
-  console.log(`💰 Token Budget: ${config.agent.tokenBudget.toLocaleString()}`);
-  console.log("");
+  logger.info(`📁 Base Path: ${config.basePath}`);
+  logger.info(`⚙️  Working Directory: ${config.workingDir}`);
+  logger.info(`🤖 Autonomy Level: ${config.agent.autonomyLevel}`);
+  logger.info(`💰 Token Budget: ${config.agent.tokenBudget.toLocaleString()}`);
+  logger.info("");
 
   // Run health check
-  console.log("🏥 Running system health check...");
+  logger.info("🏥 Running system health check...");
   const healthCheck = new HealthCheck({
     basePath: config.basePath,
     claudePath: config.claudePath,
@@ -38,29 +39,29 @@ async function main() {
   });
 
   const health = await healthCheck.runAll();
-  console.log("");
-  console.log(healthCheck.formatHealthReport(health));
-  console.log("");
+  logger.info("");
+  logger.info(healthCheck.formatHealthReport(health));
+  logger.info("");
 
   if (health.overall === "down" || health.overall === "critical") {
-    console.error(
+    logger.error(
       "❌ System health critical - please fix issues before starting",
     );
-    console.error("");
-    console.error("Failed Checks:");
+    logger.error("");
+    logger.error("Failed Checks:");
     for (const check of health.checks.filter((c) => c.status === "fail")) {
-      console.error(`  - ${check.name}: ${check.message}`);
+      logger.error(`  - ${check.name}: ${check.message}`);
     }
-    console.error("");
-    console.error("Recommendations:");
+    logger.error("");
+    logger.error("Recommendations:");
     for (const rec of health.recommendations) {
-      console.error(`  - ${rec}`);
+      logger.error(`  - ${rec}`);
     }
     process.exit(1);
   }
 
   // Initialize agent
-  console.log("🚀 Initializing autonomous agent...");
+  logger.info("🚀 Initializing autonomous agent...");
   const agent = new AutonomousAgent({
     basePath: config.basePath,
     claudePath: config.claudePath,
@@ -80,14 +81,14 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
 
-    console.log("");
-    console.log("🛑 Shutdown signal received...");
+    logger.info("");
+    logger.info("🛑 Shutdown signal received...");
 
     // Stop agent
     await agent.stop();
 
     // Generate final report
-    console.log("📊 Generating final report...");
+    logger.info("📊 Generating final report...");
     const reportGenerator = new ReportGenerator(config.basePath);
     const status = agent.getStatus();
     const history = agent.getHistory();
@@ -98,9 +99,9 @@ async function main() {
       history,
     );
 
-    console.log("");
-    console.log(reportGenerator.formatSummary(summary));
-    console.log("");
+    logger.info("");
+    logger.info(reportGenerator.formatSummary(summary));
+    logger.info("");
 
     // Export detailed report
     const detailedReport = await reportGenerator.generateDetailedReport(
@@ -114,9 +115,9 @@ async function main() {
       "json",
     );
 
-    console.log(`📄 Detailed report saved: ${reportPath}`);
-    console.log("");
-    console.log("👋 Goodbye!");
+    logger.info(`📄 Detailed report saved: ${reportPath}`);
+    logger.info("");
+    logger.info("👋 Goodbye!");
 
     process.exit(0);
   };
@@ -130,24 +131,24 @@ async function main() {
     const dashboardOutput = dashboard.formatDashboard();
 
     console.clear();
-    console.log(dashboardOutput);
+    logger.info(dashboardOutput);
   }, 30000); // Update every 30 seconds
 
   // Start agent
-  console.log("");
-  console.log("✨ Agent starting in 3 seconds...");
+  logger.info("");
+  logger.info("✨ Agent starting in 3 seconds...");
   await new Promise((resolve) => setTimeout(resolve, 3000));
 
   try {
     // Show initial dashboard
     const dashboard = new StatusDashboard(agent);
-    console.log(dashboard.formatDashboard());
-    console.log("");
+    logger.info(dashboard.formatDashboard());
+    logger.info("");
 
     // Start autonomous execution
     await agent.start();
   } catch (error) {
-    console.error("❌ Fatal error:", error);
+    logger.error("❌ Fatal error", error instanceof Error ? error : undefined);
     clearInterval(statusInterval);
     await shutdown();
   } finally {
@@ -157,20 +158,20 @@ async function main() {
 
 // Handle unhandled rejections
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
+  logger.error("❌ Unhandled Rejection at", reason instanceof Error ? reason : undefined, { promise: String(promise), reason: String(reason) });
   process.exit(1);
 });
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (error) => {
-  console.error("❌ Uncaught Exception:", error);
+  logger.error("❌ Uncaught Exception", error instanceof Error ? error : undefined);
   process.exit(1);
 });
 
 // Run
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
-    console.error("❌ Fatal error:", error);
+    logger.error("❌ Fatal error", error instanceof Error ? error : undefined);
     process.exit(1);
   });
 }

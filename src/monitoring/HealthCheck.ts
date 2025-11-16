@@ -7,50 +7,213 @@ import { FileStorage } from "@/memory/FileStorage";
 import path from "node:path";
 import fs from "node:fs/promises";
 
+/**
+ * Result of a single health check
+ *
+ * Contains the status, timing, and details of one health check operation.
+ *
+ * @example
+ * ```typescript
+ * const result: HealthCheckResult = {
+ *   name: "claude_executable",
+ *   status: "pass",
+ *   message: "Claude Code CLI is available (v1.2.3)",
+ *   details: {
+ *     version: "1.2.3",
+ *     path: "/usr/local/bin/claude"
+ *   },
+ *   timestamp: "2024-10-12T15:30:00.000Z",
+ *   duration: 0.123
+ * };
+ * ```
+ */
 export interface HealthCheckResult {
+  /** Name of the health check */
   name: string;
+  /** Check result: pass (healthy), warn (degraded), fail (critical) */
   status: "pass" | "fail" | "warn";
+  /** Human-readable status message */
   message: string;
+  /** Optional additional details about the check */
   details?: Record<string, unknown>;
+  /** ISO timestamp when check was performed */
   timestamp: string;
+  /** Check execution duration in seconds */
   duration: number;
 }
 
+/**
+ * Overall system health status
+ *
+ * Aggregates all health check results into an overall system health assessment
+ * with recommendations for addressing issues.
+ *
+ * @example
+ * ```typescript
+ * const health: SystemHealth = {
+ *   overall: "healthy",
+ *   timestamp: "2024-10-12T15:30:00.000Z",
+ *   checks: [checkResult1, checkResult2],
+ *   summary: {
+ *     passed: 5,
+ *     failed: 0,
+ *     warnings: 1,
+ *     total: 6
+ *   },
+ *   recommendations: ["Monitor memory usage"]
+ * };
+ * ```
+ */
 export interface SystemHealth {
+  /** Overall health status based on all checks */
   overall: "healthy" | "degraded" | "critical" | "down";
+  /** ISO timestamp when health assessment was performed */
   timestamp: string;
+  /** Individual check results */
   checks: HealthCheckResult[];
+  /** Summary statistics of all checks */
   summary: {
+    /** Number of checks that passed */
     passed: number;
+    /** Number of checks that failed */
     failed: number;
+    /** Number of checks with warnings */
     warnings: number;
+    /** Total number of checks performed */
     total: number;
   };
+  /** Actionable recommendations based on failed/warned checks */
   recommendations: string[];
 }
 
+/**
+ * Configuration for health check system
+ *
+ * Defines which checks to run and operational parameters.
+ *
+ * @example
+ * ```typescript
+ * const config: HealthCheckConfig = {
+ *   basePath: "/home/user/.llm-nightly",
+ *   claudePath: "claude",
+ *   workingDir: process.cwd(),
+ *   checksToRun: ["claude_executable", "disk_space", "memory_available"],
+ *   timeout: 30
+ * };
+ * ```
+ */
 export interface HealthCheckConfig {
+  /** Base directory for task storage */
   basePath: string;
+  /** Path to Claude CLI executable */
   claudePath: string;
+  /** Working directory for operations */
   workingDir: string;
+  /** Optional list of specific checks to run (runs all if not specified) */
   checksToRun?: string[];
+  /** Timeout in seconds for each check (default: 30) */
   timeout?: number;
 }
 
+/**
+ * System health monitoring and diagnostics
+ *
+ * Performs comprehensive health checks on all system components including
+ * Claude CLI availability, file system access, disk space, memory usage,
+ * and task queue health. Provides actionable recommendations for issues.
+ *
+ * Available checks:
+ * - claude_executable: Validates Claude CLI is installed and functional
+ * - workspace_writable: Verifies write permissions in working directory
+ * - task_storage: Checks task storage integrity
+ * - disk_space: Validates sufficient disk space
+ * - memory_available: Monitors memory usage
+ * - task_queue_health: Detects stale or blocked tasks
+ * - file_permissions: Validates directory permissions
+ *
+ * @example
+ * ```typescript
+ * const healthCheck = new HealthCheck({
+ *   basePath: "/home/user/.llm-nightly",
+ *   claudePath: "claude",
+ *   workingDir: process.cwd(),
+ *   timeout: 30
+ * });
+ *
+ * // Run all checks
+ * const health = await healthCheck.runAll();
+ * console.log(`Overall: ${health.overall}`);
+ * console.log(`Passed: ${health.summary.passed}/${health.summary.total}`);
+ *
+ * // Display formatted report
+ * const report = healthCheck.formatHealthReport(health);
+ * console.log(report);
+ *
+ * // Check recommendations
+ * if (health.recommendations.length > 0) {
+ *   console.log("Recommendations:");
+ *   health.recommendations.forEach(r => console.log(`  - ${r}`));
+ * }
+ * ```
+ */
 export class HealthCheck {
   private config: HealthCheckConfig;
   private storage: FileStorage;
 
+  /**
+   * Creates a new HealthCheck instance
+   *
+   * @param config - Health check configuration
+   */
   constructor(config: HealthCheckConfig) {
     this.config = {
       timeout: 30,
       ...config,
     };
-    this.storage = new FileStorage();
+    this.storage = new FileStorage({ baseDir: config.basePath });
   }
 
   /**
-   * Run all health checks
+   * Run all configured health checks
+   *
+   * Executes all health checks in parallel and aggregates results into
+   * an overall system health assessment. Automatically determines overall
+   * status based on failure/warning thresholds.
+   *
+   * Overall status determination:
+   * - healthy: No failures, 0-1 warnings
+   * - degraded: No failures, 2+ warnings
+   * - critical: 1-2 failures OR 3+ warnings
+   * - down: 3+ failures
+   *
+   * @returns Complete system health assessment with recommendations
+   *
+   * @example
+   * ```typescript
+   * const health = await healthCheck.runAll();
+   *
+   * // Check overall status
+   * switch (health.overall) {
+   *   case "healthy":
+   *     console.log("✅ All systems operational");
+   *     break;
+   *   case "degraded":
+   *     console.log("⚠️  System degraded, monitoring needed");
+   *     break;
+   *   case "critical":
+   *     console.log("🔴 Critical issues detected!");
+   *     break;
+   *   case "down":
+   *     console.log("❌ System down!");
+   *     break;
+   * }
+   *
+   * // Review failed checks
+   * const failed = health.checks.filter(c => c.status === "fail");
+   * failed.forEach(check => {
+   *   console.log(`Failed: ${check.name} - ${check.message}`);
+   * });
+   * ```
    */
   async runAll(): Promise<SystemHealth> {
     const checks: HealthCheckResult[] = [];
@@ -570,7 +733,41 @@ export class HealthCheck {
   }
 
   /**
-   * Format health report as text
+   * Format health report as human-readable text
+   *
+   * Generates a nicely formatted text report with box drawing characters,
+   * emoji status indicators, and organized sections.
+   *
+   * @param health - System health data to format
+   * @returns Formatted text report
+   *
+   * @example
+   * ```typescript
+   * const health = await healthCheck.runAll();
+   * const report = healthCheck.formatHealthReport(health);
+   * console.log(report);
+   *
+   * // Example output:
+   * // ╔════════════════════════════════════════════════╗
+   * // ║           System Health Report                ║
+   * // ╚════════════════════════════════════════════════╝
+   * //
+   * // Overall Status: 🟢 Healthy
+   * // Timestamp: 2024-10-12T15:30:00.000Z
+   * //
+   * // Summary: ✅ 6 | ⚠️  1 | ❌ 0 (7 total)
+   * //
+   * // Checks:
+   * //   ✅ claude_executable: Claude Code CLI is available (0.12s)
+   * //   ✅ workspace_writable: Workspace is writable (0.05s)
+   * //   ⚠️  memory_available: Memory usage high (0.01s)
+   * //
+   * // Recommendations:
+   * //   - Monitor memory usage, consider reducing concurrent tasks
+   *
+   * // Write to file
+   * await Bun.write("health-report.txt", report);
+   * ```
    */
   formatHealthReport(health: SystemHealth): string {
     const lines = [

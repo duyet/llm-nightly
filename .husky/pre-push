@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔍 Running pre-push checks..."
+
+# Run full test suite
+echo "🧪 Running full test suite..."
+bun test
+
+if [ $? -eq 0 ]; then
+  echo "✓ All tests passed"
+else
+  echo "❌ Tests failed. Please fix failing tests before pushing."
+  exit 1
+fi
+
+# Run build verification
+echo "🏗️  Verifying build..."
+bun run build
+
+if [ $? -eq 0 ]; then
+  echo "✓ Build verification passed"
+else
+  echo "❌ Build failed. Please fix build errors before pushing."
+  exit 1
+fi
+
+# Run type checking
+echo "🔍 Running TypeScript type checking..."
+bun run typecheck
+
+if [ $? -eq 0 ]; then
+  echo "✓ Type checking passed"
+else
+  echo "❌ Type checking failed. Please fix errors before pushing."
+  exit 1
+fi
+
+echo "✅ All pre-push checks passed! Ready to push."
