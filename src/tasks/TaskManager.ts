@@ -200,7 +200,7 @@ export class TaskManager {
     const validatedTaskId = PathValidator.validateTaskId(taskId);
 
     // Try each status directory
-    for (const status of ["open", "in-progress", "done", "blocked"]) {
+    for (const status of ["open", "in-progress", "done", "blocked", "cancelled"]) {
       const taskDir = join(this.basePath, "tasks", status, validatedTaskId);
       const configPath = join(taskDir, "config.json");
       const configFile = Bun.file(configPath);

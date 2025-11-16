@@ -242,8 +242,9 @@ export class FolderOrganizer {
    */
   private async folderExists(path: string): Promise<boolean> {
     try {
-      const stat = await Bun.file(path).exists();
-      return stat;
+      const { stat } = await import("node:fs/promises");
+      const stats = await stat(path);
+      return stats.isDirectory();
     } catch {
       return false;
     }

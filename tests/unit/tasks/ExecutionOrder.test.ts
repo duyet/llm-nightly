@@ -39,9 +39,8 @@ describe("ExecutionOrder", () => {
     test("throws on circular dependencies", async () => {
       // This would require setting up circular dependencies in the graph
       // For now, test that it doesn't throw on valid input
-      await expect(
-        executionOrder.computeTopologicalSort([]),
-      ).resolves.not.toThrow();
+      const sorted = await executionOrder.computeTopologicalSort([]);
+      expect(sorted).toEqual([]);
     });
   });
 
@@ -130,9 +129,9 @@ describe("ExecutionOrder", () => {
     });
 
     test("handles deeply nested dependencies", async () => {
-      await expect(
-        executionOrder.computeTopologicalSort([]),
-      ).resolves.not.toThrow();
+      const sorted = await executionOrder.computeTopologicalSort([]);
+      expect(sorted).toBeDefined();
+      expect(sorted).toEqual([]);
     });
   });
 });

@@ -154,6 +154,7 @@ describe("Dependency Resolution Integration Tests", () => {
 
     // Complete root task
     await taskManager.moveTask(tree.root.id, "done");
+    resolver.clearCache(); // Clear cache after status change
 
     // Check that children are now executable
     for (const child of tree.children) {
@@ -172,6 +173,7 @@ describe("Dependency Resolution Integration Tests", () => {
     for (const child of tree.children) {
       await taskManager.moveTask(child.id, "done");
     }
+    resolver.clearCache(); // Clear cache after status change
 
     // Check that grandchildren are now executable
     for (const grandchild of tree.grandchildren) {
@@ -222,12 +224,13 @@ describe("Dependency Resolution Integration Tests", () => {
 
     // Complete first independent task
     await taskManager.moveTask(independent1.id, "done");
+    resolver.clearCache(); // Clear cache after status change
 
     // Find executable tasks again
     const executable2 = await resolver.findExecutableTasks("open");
 
     // Should now include the dependent tasks
-    expect(executable2.length).toBe(4); // independent2 + 2 dependents still in open
+    expect(executable2.length).toBe(3); // independent2 + 2 dependents now unblocked
   });
 
   test("should calculate correct dependency depth", async () => {
