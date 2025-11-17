@@ -32,6 +32,7 @@ describe("API Integration Tests", () => {
       basePath: testDir,
       claudePath: "claude",
       workingDir: testDir,
+      checksToRun: ["task_storage", "workspace_writable"], // Only run checks that work in test environment
     });
     memoryManager = new MemoryManager(testDir);
 
@@ -121,10 +122,11 @@ describe("API Integration Tests", () => {
   });
 
   test("should list all tasks via GET /tasks", async () => {
-    // Create multiple tasks
+    // Create multiple tasks with unique IDs
+    const baseTimestamp = Date.now();
     for (let i = 0; i < 3; i++) {
       const config = createTestTaskConfig({
-        id: `task-${Date.now()}-${i}`,
+        id: `task-${baseTimestamp + i}-list-${i}`,
         title: `List Task ${i}`,
       });
       await taskManager.createTask(config, `Prompt ${i}`);
@@ -141,15 +143,16 @@ describe("API Integration Tests", () => {
   });
 
   test("should filter tasks by status", async () => {
-    // Create tasks in different statuses
+    // Create tasks in different statuses with unique IDs
+    const baseTimestamp = Date.now();
     const openConfig = createTestTaskConfig({
-      id: `task-${Date.now()}-open`,
+      id: `task-${baseTimestamp}-open`,
       title: "Open Task",
     });
     await taskManager.createTask(openConfig, "Open prompt");
 
     const doneConfig = createTestTaskConfig({
-      id: `task-${Date.now()}-done`,
+      id: `task-${baseTimestamp + 1}-done`,
       title: "Done Task",
     });
     await taskManager.createTask(doneConfig, "Done prompt");
@@ -165,16 +168,17 @@ describe("API Integration Tests", () => {
   });
 
   test("should filter tasks by priority", async () => {
-    // Create tasks with different priorities
+    // Create tasks with different priorities and unique IDs
+    const baseTimestamp = Date.now();
     const highPriority = createTestTaskConfig({
-      id: `task-${Date.now()}-high`,
+      id: `task-${baseTimestamp}-high`,
       title: "High Priority",
       priority: 1,
     });
     await taskManager.createTask(highPriority, "High prompt");
 
     const lowPriority = createTestTaskConfig({
-      id: `task-${Date.now()}-low`,
+      id: `task-${baseTimestamp + 1}-low`,
       title: "Low Priority",
       priority: 5,
     });
@@ -190,16 +194,17 @@ describe("API Integration Tests", () => {
   });
 
   test("should filter tasks by tag", async () => {
-    // Create tasks with different tags
+    // Create tasks with different tags and unique IDs
+    const baseTimestamp = Date.now();
     const tagged = createTestTaskConfig({
-      id: `task-${Date.now()}-tagged`,
+      id: `task-${baseTimestamp}-tagged`,
       title: "Tagged Task",
       tags: ["important", "urgent"],
     });
     await taskManager.createTask(tagged, "Tagged prompt");
 
     const untagged = createTestTaskConfig({
-      id: `task-${Date.now()}-untagged`,
+      id: `task-${baseTimestamp + 1}-untagged`,
       title: "Untagged Task",
       tags: [],
     });
@@ -234,10 +239,11 @@ describe("API Integration Tests", () => {
   });
 
   test("should return metrics via GET /metrics", async () => {
-    // Create some tasks
+    // Create some tasks with unique IDs
+    const baseTimestamp = Date.now();
     for (let i = 0; i < 3; i++) {
       const config = createTestTaskConfig({
-        id: `task-${Date.now()}-${i}`,
+        id: `task-${baseTimestamp + i}-metrics-${i}`,
         title: `Metrics Task ${i}`,
       });
       await taskManager.createTask(config, `Prompt ${i}`);

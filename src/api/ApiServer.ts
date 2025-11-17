@@ -397,14 +397,14 @@ export class ApiServer {
         return this.errorResponse("title and prompt must be strings", 400);
       }
 
-      // Sanitize and validate title
-      const title = InputValidator.sanitizeString(body.title);
+      // Sanitize and validate title (remove HTML/XSS)
+      const title = InputValidator.sanitizeHtml(InputValidator.sanitizeString(body.title));
       if (title.length < 5 || title.length > 200) {
         return this.errorResponse("title must be between 5 and 200 characters", 400);
       }
 
-      // Sanitize and validate prompt
-      const prompt = InputValidator.sanitizeString(body.prompt);
+      // Sanitize and validate prompt (remove HTML/XSS)
+      const prompt = InputValidator.sanitizeHtml(InputValidator.sanitizeString(body.prompt));
       if (prompt.length < 10) {
         return this.errorResponse("prompt must be at least 10 characters", 400);
       }
@@ -416,7 +416,7 @@ export class ApiServer {
         if (typeof body.context !== "string") {
           return this.errorResponse("context must be a string", 400);
         }
-        context = InputValidator.sanitizeString(body.context);
+        context = InputValidator.sanitizeHtml(InputValidator.sanitizeString(body.context));
         InputValidator.validateStringSize(context);
       }
 

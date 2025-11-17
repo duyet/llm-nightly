@@ -205,6 +205,31 @@ export class InputValidator {
   }
 
   /**
+   * Sanitize HTML/XSS from user input
+   * Removes potentially dangerous HTML tags and scripts
+   */
+  static sanitizeHtml(input: string): string {
+    // Remove script tags and their content
+    let sanitized = input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+
+    // Remove all HTML tags
+    sanitized = sanitized.replace(/<[^>]*>/g, "");
+
+    // Decode HTML entities that might bypass filtering
+    sanitized = sanitized
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/&amp;/g, "&");
+
+    // Re-apply tag removal in case entities decoded to tags
+    sanitized = sanitized.replace(/<[^>]*>/g, "");
+
+    return sanitized.trim();
+  }
+
+  /**
    * Validate JSON size before parsing
    */
   static async validateJsonSize(
