@@ -420,9 +420,10 @@ export class ApiServer {
         InputValidator.validateStringSize(context);
       }
 
-      // Generate task ID
+      // Generate task ID with random suffix to prevent collisions in concurrent requests
       const timestamp = Date.now();
-      const taskId = `task-${timestamp}-api`;
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const taskId = `task-${timestamp}-${randomSuffix}-api`;
 
       // Map priority from string to number
       const priorityMap: Record<string, number> = {

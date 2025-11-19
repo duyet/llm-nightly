@@ -24,6 +24,7 @@ describe("API Integration Tests", () => {
   let healthCheck: HealthCheck;
   let memoryManager: MemoryManager;
   let baseUrl: string;
+  let testPort: number;
 
   beforeEach(async () => {
     testDir = await createTestDir("api");
@@ -36,9 +37,12 @@ describe("API Integration Tests", () => {
     });
     memoryManager = new MemoryManager(testDir);
 
+    // Use unique port for each test to avoid conflicts
+    testPort = 3000 + Math.floor(Math.random() * 1000);
+
     apiServer = new ApiServer(
       {
-        port: 3001, // Use different port for each test
+        port: testPort,
         host: "127.0.0.1",
         enableCors: true,
         maxRequestSize: 10 * 1024 * 1024,
@@ -50,12 +54,18 @@ describe("API Integration Tests", () => {
     );
 
     await apiServer.start();
-    baseUrl = "http://127.0.0.1:3001";
+    baseUrl = `http://127.0.0.1:${testPort}`;
   });
 
   afterEach(async () => {
-    await apiServer.stop();
-    await cleanupTestDir(testDir);
+    if (apiServer) {
+      await apiServer.stop();
+      // Small delay to ensure server fully closes
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (testDir) {
+      await cleanupTestDir(testDir);
+    }
   });
 
   test("should return healthy status from health endpoint", async () => {
@@ -443,7 +453,7 @@ describe("API Integration Tests", () => {
     const info = apiServer.getInfo();
 
     expect(info.running).toBe(true);
-    expect(info.port).toBe(3001);
+    expect(info.port).toBe(testPort);
     expect(info.host).toBe("127.0.0.1");
   });
 
